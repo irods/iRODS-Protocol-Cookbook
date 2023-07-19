@@ -17,7 +17,7 @@
 
 
 ## We'll be doing this from scratch, so all imports will come from 
-## the Python standard library
+## the Python standard library or 3rd-party 
 import socket
 import struct
 import base64
@@ -27,6 +27,8 @@ import time
 import enum
 import xml.etree.ElementTree as ET
 from enum import Enum
+
+from pandas as pd
 
 
 # This tutorial assumes you have deployed iRODS in Docker using
@@ -38,10 +40,10 @@ from enum import Enum
 # ```
 # Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
 
-# In[2]:
+# In[ ]:
 
 
-HOST = "172.19.0.3"
+HOST = "172.28.0.3"
 
 
 # In[3]:
@@ -72,7 +74,8 @@ class HeaderType(Enum):
     RODS_API_REPLY = "RODS_API_REPLY"
     RODS_VERSION = "RODS_VERSION"
 
-def header(header_type: HeaderType, msg: bytes, error_len=0, bs_len=0, int_info=0):
+def header(header_type: HeaderType, msg: bytes, 
+           error_len=0, bs_len=0, int_info=0) -> bytes:
     return f"""
         <MsgHeader_PI>
             <type>{header_type}</type>
@@ -90,7 +93,7 @@ def header(header_type: HeaderType, msg: bytes, error_len=0, bs_len=0, int_info=
 # In[5]:
 
 
-def send_header(header, sock):
+def send_header(header: bytes, sock: socket) -> None:
     header_len = int.to_bytes(len(header), byteorder='big', length=4) ## The first part of all iRODS messages
                                                                       ## must be 4 bytes indicating how long
                                                                       ## the header is in bytes. These bytes
@@ -100,13 +103,12 @@ def send_header(header, sock):
     sock.sendall(header_len)
     sock.sendall(header)
     
-def send_msg(msg, sock) -> None:
+def send_msg(msg: bytes, sock: socket) -> None:
     sock.sendall(msg)
     
-def recv(sock) -> [ET, ET]:
+def recv(sock: socket) -> [ET, ET]:
     header_len = int.from_bytes(sock.recv(4), byteorder='big')
     print(f"HEADER LEN: [{header_len}]")
-    is st
     header = sock.recv(header_len).decode("utf-8")
     print(f"HEADER: [{header}]")
     
@@ -139,7 +141,7 @@ def startup_pack(irods_prot=IrodsProt.XML_PROT.value,
                  api_version="d", ## This MUST ALWAYS be "d." This value has been hardcoded into iRODS
                                   ## since very early days.
                  option=None ## This option controls, among other things,whether SSL negotiation is required.
-                ) -> str:
+                ) -> bytes:
     return f"""
     <StartupPack_PI>
              <irodsProt>{irods_prot}</irodsProt>
@@ -208,7 +210,7 @@ h, msg = recv(conn)
 # In[12]:
 
 
-def encode_dict_as_base64_json(d): 
+def encode_dict_as_base64_json(d: dict): 
     return base64.b64encode(
         json.dumps(d).encode('utf-8'))
 
@@ -219,11 +221,11 @@ def encode_dict_as_base64_json(d):
 # In[13]:
 
 
-def read_base64_into_json(bsix, trunc=False):
+def read_base64_into_json(bsix: bytes, trunc=False) -> dict:
     decoded = base64.b64decode(bsix).decode('utf-8')
     return json.loads(decoded[:-1]) if trunc else json.loads(decoded)
 
-def bin_bytes_buf(payload):
+def bin_bytes_buf(payload: dict) -> bytes:
     payload = encode_dict_as_base64_json(payload)
     return f"""
     <BinBytesBuf_PI>
@@ -280,7 +282,7 @@ print(f"REQUEST RESULT: [{request_result}]")
 # In[18]:
 
 
-def pad_password(pw):
+def pad_password(pw: str) -> bytes:
     return struct.pack("%ds" % MAX_PASSWORD_LENGTH, pw.encode("utf-8").strip())
 
 ## Native auth specific operations
@@ -319,20 +321,20 @@ h, m = recv(conn)
 
 # First, we'll have to generate a `DataObjInp_PI`. This is a generic message type used for all sorts of operations. It also contains a `KeyValPair_PI`, which is an important data structure in the iRODS protocol. Although it cannot be sent on its own, it is a very important vehicle for parameters. Internally, this `KeyValPair_PI` is a cond_input structure.
 
-# In[ ]:
+# In[21]:
 
 
 def data_obj_inp(
     obj_path,
-    create_mode=0,
-    open_flags=0,
-    offset=0,
-    data_size=0,
-    num_threads=0,
-    opr_type=0,
-    cond_input: dict = {}
-):
-    data_obj_inp = ET.fromstring(f"""
+    create_mode="0",
+    open_flags="0",
+    offset="0",
+    data_size="0",
+    num_threads="0",
+    opr_type="0",
+    cond_input= {}
+) -> bytes:
+    obj_inp = ET.fromstring(f"""
     <DataObjInp_PI>
         <objPath>{obj_path}</objPath>
         <createMode>{create_mode}</createMode>
@@ -343,29 +345,258 @@ def data_obj_inp(
         <oprType>{opr_type}</oprType>
     </DataObjInp_PI>
     """)
+    ET.indent(obj_inp)
+    obj_inp = append_kvp(obj_inp, cond_input)
+    ret = ET.tostring(obj_inp).decode("utf-8").replace("\n", "").replace(" ", "").encode('utf-8')
+    print(ret)
+    return ret
     
+def parse_key_val_pair_into_dict(kvp: ET):
+    ret = {}
+
+    return ret
+
+
+# Next, we'll need some utility methods. How these work might not be totally obvious, so consider reading ahead and revisiting these once you've seen how it's used in the stat API Call.
+
+# In[22]:
+
+
+def append_kvp(et, data):
     kvp = ET.Element("KeyValPair_PI")
-    kvp.append(
-        ET.Element("sslen", text=len(cond_input))
-    )
-    for key in cond_input.keys():
-        kvp.append(
-            ET.Element("keyWord", text=key)
-        )
-    for value in cond_input.values():
-        kvp.append(
-            ET.Element("svalue", text=value)
-        )
-    
-    data_obj_inp.find("DataObjInp_PI").append(kvp)
-    return data_obj_inp.dump()
-    
-def parse_key_val_pair_into_dict(kvp):
-    kvp = ET.fromstring(kvp)
-    
+    sslen = ET.Element("ssLen")
+    sslen.text = str(len(data))
+    kvp.append(sslen)
+    for key in data.keys():
+        keyWord = ET.Element("keyWord")
+        keyWord.text = key
+        kvp.append(keyWord)
+    for value in data.values():
+        svalue = ET.Element("svalue")
+        svalue.text = value
+        kvp.append(svalue)
+    et.append(kvp)
+    return et
+
+def append_iivp(et, data):
+    iivp = ET.Element("InxIvalPair_PI")
+    sslen = ET.Element("iiLen")
+    sslen.text = str(len(data))
+    iivp.append(sslen)
+    for key in data.keys():
+        inx = ET.Element("inx")
+        inx.text = key
+        iivp.append(inx)
+    for value in data.values():
+        ivalue = ET.Element("ivalue")
+        ivalue.text = value
+        iivp.append(ivalue)
+    et.append(iivp)
+    return et
+
+def append_ivp(et, data):
+    ivp = ET.Element("InxValPair_PI")
+    islen = ET.Element("isLen")
+    islen.text = str(len(data))
+    ivp.append(islen)
+    for key in data.keys():
+        inx = ET.Element("inx")
+        inx.text = key
+        ivp.append(inx)
+    for value in data.values():
+        svalue = ET.Element("svalue")
+        svalue.text = value
+        ivp.append(svalue)
+    et.append(ivp)
+    return et
 
 
-# In[21]:
+# In[23]:
+
+
+OBJ_STAT_AN = 633
+
+stat_obj_inp = data_obj_inp("/tempZone/home/rods") 
+h = header(HeaderType.RODS_API_REQ.value, stat_obj_inp, int_info=OBJ_STAT_AN)
+
+send_header(h, conn)
+send_msg(stat_obj_inp, conn)
+
+
+# If everything has gone smoothely, you should receive a `RodsObjStat_PI` from the server. That `objType` is 2 tells us that the thing we stat'd was a collection. Since collections are purely virtual objects, `objSize` is 0.
+
+# In[24]:
+
+
+h, m = recv(conn)
+
+
+# Now we know our target is there. Let's go ahead and read its contents. This happens through a genQuery. For details about the first-generation GenQuery API, see [here](https://github.com/irods/irods_docs/blob/main/docs/developers/library_examples.md#querying-the-catalog-using-general-queries). For information about the GenQuery2 interface (under development as of time of writing), see [here](https://www.youtube.com/watch?v=3dR_JoGA6wA&t=654s&ab_channel=TheiRODSConsortium).
+
+# In[25]:
+
+
+GEN_QUERY_AN = 702
+
+def gen_query(
+    max_rows=256,
+    continue_inx=0,
+    partial_start_index=0,
+    options=0,
+    cond_input={},
+    select_inp={},
+    sql_cond_inp={}
+) -> bytes:
+    ret = ET.fromstring(f"""
+    <GenQueryInp_PI>
+        <maxRows>{max_rows}</maxRows>
+        <continueInx>{continue_inx}</continueInx>
+        <partialStartIndex>{partial_start_index}</partialStartIndex>
+        <options>{options}</options>
+    </GenQueryInp_PI>
+    """)
+    ret = append_kvp(ret, cond_input)
+    ret = append_iivp(ret, select_inp)
+    ret = append_ivp(ret, sql_cond_inp)
+    
+    return ET.tostring(ret).decode("utf-8").replace(" ", "").replace("\n", "").encode("utf-8")
+
+## The Catalog ships with a table of SQL functions that can perform common functions
+## The first link above also has an example of a specific query.
+def spec_query(
+    sql,
+    arg_1,
+    max_rows=256,
+    continue_inx=0,
+    row_offset=0,
+    options=0,
+    cond_input={}
+) -> bytes:
+    ret = ET.fromstring(f"""
+    <specificQueryInp_PI>
+        <sql>{sql}</sql>
+        <arg1>{arg_1}</arg1>
+        <maxRows>{max_rows}</maxRows>
+        <continueInx>{continue_inx}</continueInx>
+        <rowOffset>{row_offset}</rowOffset>
+        <options>{options}</options>
+    </specificQueryInp_PI>
+    """)
+    ret = append_kvp(ret, cond_input)
+    
+    return ET.tostring(ret).decode("utf-8").replace(" ", "").replace("\n", "").encode("utf-8")
+
+
+# In[26]:
+
+
+## This query grabs the inheritance flag of the target collection
+gq = gen_query(
+    cond_input={"zone":"tempZone"},
+    select_inp={"506":"1"},
+    sql_cond_inp={"501":"= '/tempZone/home/rods'"}
+)
+print(gq)
+
+
+# *NB:* It might be easier to make sense of the server's response if you make sure the directory you're about to stat is populated.
+
+# One quick thing before we send this over to the server: the iRODS dialect of XML has a few quirks related to encoding special characters. Some special characters it does not escape at all. For others, it uses a non-standard encoding. For that reason, we'll need to write some functions that translate between standard XML and iRODS XML.
+
+# In[27]:
+
+
+standard_to_irods = {
+  b"&#34;":b"&quot;",
+    
+  b"&#39":b"&apos;",
+    
+  b"&#x9;":b"\t",
+    
+  b"&#xD;":b"\r",
+    
+  b"&#xA;":b"\n",
+    
+  b"`"    :b"&apos"
+}
+
+
+def translate_xml_to_irods_dialect(xml_bytes):
+    output = b''
+    print("XML_BYTES:[", xml_bytes,"]")
+    return xml_bytes
+    while len(xml_bytes) > 0:
+        for prefix in standard_to_irods:
+            if len(xml_bytes) == 0:
+                break
+            if xml_bytes.startswith(prefix):
+                output += standard_to_irods[prefix]
+                xml_bytes = xml_bytes[len(prefix):]
+            else:
+                output += bytes(xml_bytes[0])
+                xml_bytes = xml_bytes[1:]
+    return output
+    
+gq = translate_xml_to_irods_dialect(gq)
+h = header(HeaderType.RODS_API_REQ.value, gq, int_info=GEN_QUERY_AN)
+
+
+# In[28]:
+
+
+send_header(h, conn)
+send_msg(gq, conn)
+
+
+# The results from this GenQuery might be a little hard to grok. 
+
+# In[29]:
+
+
+h, m = recv(conn)
+
+
+# To demonstrate how they amount to valid SQL results, let's translate these into a Pandas DataFrame. To see a similar example in C++ that operates above the protocol level, refer to the genQuery1 documentation linked above.
+
+# In[ ]:
+
+
+def read_gen_query_results_into_dataframe(gqr: bytes):    
+    gqr = ET.fromstring(gqr.decode('utf-8'))
+    
+    ## Each SqlResult_PI is a row of data
+    ## Collect them all into a list
+    ## We can safely ignore the "reslen" attribute since the Python XML 
+    ## API already knows how large each string is, but you might use it for error checking
+    results = [result.find("value").text for result in gqr.findall("SqlResult_PI")]
+    
+    df = pd.DataFrame()
+    
+    row_cnt = int(gqr.find("rowCnt").text)
+    attribute_cnt = int(gqr.find("attriCnt").text)
+    
+    for result in gqr.findall("SqlResult_PI"):
+        attri_inx = int(result.find("attriInx").text)
+        res_len = int(result.find("reslen").text)
+        value = result.find("value").text
+            
+            
+    return df
+
+
+# In[ ]:
+
+
+## This genQuery grabs the actual data objects 
+## that live in the collection we care about
+gq = gen_query(
+    select_inp={"401":"1"},
+    sql_cond_inp={"501":"= 'rods'", "403":"= '/tempZone/home'"}
+)
+print(gq)
+
+
+# In[ ]:
 
 
 def disconnect(sock):
@@ -374,7 +605,7 @@ def disconnect(sock):
     )
 
 
-# In[22]:
+# In[ ]:
 
 
 disconnect(conn)
