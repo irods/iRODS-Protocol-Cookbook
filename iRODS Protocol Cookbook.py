@@ -13,11 +13,11 @@
 # * [ils](#ils)
 #     - [Stat a collection](#stat_coll)
 
-# In[1]:
+# In[2]:
 
 
 ## We'll be doing this from scratch, so all imports will come from 
-## the Python standard library or 3rd-party 
+## the Python standard library or 3rd-party tools
 import socket
 import struct
 import base64
@@ -28,7 +28,7 @@ import enum
 import xml.etree.ElementTree as ET
 from enum import Enum
 
-from pandas as pd
+import pandas as pd
 
 
 # This tutorial assumes you have deployed iRODS in Docker using
@@ -46,13 +46,25 @@ from pandas as pd
 HOST = "172.28.0.3"
 
 
-# In[3]:
+# In[4]:
 
 
 PORT = 1247 ## This is the standard iRODS port
 MAX_PASSWORD_LENGTH = 50 ## This constant comes 
                          ## from the internals 
                          ## of the iRODS server
+API_TABLE = {
+    "AUTHENTICATION_APN":110000, ## The API number for the 4.3.0 auth framework
+    "OBJ_STAT_AN":633,
+    "GEN_QUERY_AN":702
+}
+
+CATALOG_INDEX_TABLE = {
+    "COL_COLL_NAME": "501",
+    "COL_D_DATA_ID": "401",
+    "COL_DATA_NAME": "403"
+    "COL_COLL_INHERITANCE": "506"
+}
 
 
 # First, we're going to write a small library of functions that do some 
@@ -252,12 +264,11 @@ auth_ctx = {
 # In[15]:
 
 
-AUTHENTICATION_APN = 110000 ## The API number for the 4.3.0 auth framework
 initial_auth_msg = bin_bytes_buf(auth_ctx)
 print(initial_auth_msg)
 h = header(HeaderType.RODS_API_REQ.value, 
            initial_auth_msg, 
-           int_info=AUTHENTICATION_APN)
+           int_info=API_TABLE["AUTHENTICATION_APN"])
 send_header(h, conn)
 send_msg(initial_auth_msg, conn)
 
@@ -300,7 +311,9 @@ print(challenge_response)
 # In[19]:
 
 
-h = header(HeaderType.RODS_API_REQ.value, challenge_response, int_info=AUTHENTICATION_APN)
+h = header(HeaderType.RODS_API_REQ.value, 
+           challenge_response, 
+           int_info=API_TABLE["AUTHENTICATION_APN"])
 send_header(h, conn)
 send_msg(challenge_response, conn)
 
@@ -414,10 +427,10 @@ def append_ivp(et, data):
 # In[23]:
 
 
-OBJ_STAT_AN = 633
-
 stat_obj_inp = data_obj_inp("/tempZone/home/rods") 
-h = header(HeaderType.RODS_API_REQ.value, stat_obj_inp, int_info=OBJ_STAT_AN)
+h = header(HeaderType.RODS_API_REQ.value, 
+           stat_obj_inp, 
+           int_info=API_TABLE["OBJ_STAT_AN"])
 
 send_header(h, conn)
 send_msg(stat_obj_inp, conn)
@@ -435,8 +448,6 @@ h, m = recv(conn)
 
 # In[25]:
 
-
-GEN_QUERY_AN = 702
 
 def gen_query(
     max_rows=256,
@@ -493,8 +504,12 @@ def spec_query(
 ## This query grabs the inheritance flag of the target collection
 gq = gen_query(
     cond_input={"zone":"tempZone"},
-    select_inp={"506":"1"},
-    sql_cond_inp={"501":"= '/tempZone/home/rods'"}
+    select_inp={
+        CATALOG_INDEX_TABLE["COL_COLL_INHERITANCE"]:"1"
+    },
+    sql_cond_inp={
+        CATALOG_INDX_TABLE["COL_COLL_NAME"]:"= '/tempZone/home/rods'"
+    }
 )
 print(gq)
 
@@ -509,7 +524,7 @@ print(gq)
 standard_to_irods = {
   b"&#34;":b"&quot;",
     
-  b"&#39":b"&apos;",
+  b"&#39;":b"&apos;",
     
   b"&#x9;":b"\t",
     
@@ -523,7 +538,6 @@ standard_to_irods = {
 
 def translate_xml_to_irods_dialect(xml_bytes):
     output = b''
-    print("XML_BYTES:[", xml_bytes,"]")
     return xml_bytes
     while len(xml_bytes) > 0:
         for prefix in standard_to_irods:
@@ -538,7 +552,9 @@ def translate_xml_to_irods_dialect(xml_bytes):
     return output
     
 gq = translate_xml_to_irods_dialect(gq)
-h = header(HeaderType.RODS_API_REQ.value, gq, int_info=GEN_QUERY_AN)
+h = header(HeaderType.RODS_API_REQ.value, 
+           gq, 
+           int_info=API_TABLE["GEN_QUERY_AN"])
 
 
 # In[28]:
@@ -590,8 +606,13 @@ def read_gen_query_results_into_dataframe(gqr: bytes):
 ## This genQuery grabs the actual data objects 
 ## that live in the collection we care about
 gq = gen_query(
-    select_inp={"401":"1"},
-    sql_cond_inp={"501":"= 'rods'", "403":"= '/tempZone/home'"}
+    select_inp={
+        CATALOG_INDEX_TABLE["COL_COLL_INHERITANCE"]:"1"
+    },
+    sql_cond_inp={
+        CATALOG_INDEX_TABLE["COL_COLL_NAME"]:"= 'rods'", 
+        CATALOG_INDEX_TABLE["COL_DATA_NAME"]:"= '/tempZone/home'"
+    }
 )
 print(gq)
 
