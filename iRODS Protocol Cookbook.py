@@ -57,9 +57,12 @@ MAX_PASSWORD_LENGTH = 50 ## This constant comes
 API_TABLE = {
     "AUTHENTICATION_APN":110000, ## The API number for the 4.3.0 auth framework
     "OBJ_STAT_AN":633,
-    "GEN_QUERY_AN":702
+    "GEN_QUERY_AN":702,
+    "DATA_OBJ_PUT_AN": 606
 }
 
+## These provide indices into the catalog,
+## which allows the iRODS server to directly query the SQL server
 CATALOG_INDEX_TABLE = {
     "COL_COLL_NAME"       :"501",
     "COL_D_DATA_ID"       :"401",
@@ -601,6 +604,43 @@ def read_gen_query_results_into_dataframe(gqr):
     return pd.DataFrame(data)
 
 read_gen_query_results_into_dataframe(m)
+
+
+# # Data Transfer <a class="anchor" id="data_transfer"></a>
+# 
+# Now that we can see the contents of this collection, let's create a new data object inside of it. 
+# This will show cases some of the more advanced features of `condInpt`. 
+
+# In[50]:
+
+
+## Suppose we want to transfer a file containing this text.
+hello_cpp = """
+#include <iostream>
+
+int main() {
+    std::cout << "Hello World!";
+    return 0;
+}
+"""
+
+
+# In[ ]:
+
+
+data_object_name = "hello.cpp"
+data_size=len(hello_cpp.encode("utf-8"))
+iput_payload = data_obj_inp(
+    f"/tempZone/home/rods/{data_object_name}",
+    open_flags="2",
+    data_size=data_size,
+    opr_type="1",
+    cond_input={
+        "dataType":"generic",
+        "dataSize":data_size,
+        "dataIncluded":""    ## Generally, keys with empty values in cond_input act as flags
+    }
+)
 
 
 # In[48]:
