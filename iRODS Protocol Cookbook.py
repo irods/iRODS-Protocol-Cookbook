@@ -12,8 +12,9 @@
 # * [Authentication](#authentication)
 # * [ils](#ils)
 #     - [Stat a collection](#stat_coll)
+#     - [Querying for the Data Objects in a Container](#data_objects_query)
 
-# In[2]:
+# In[1]:
 
 
 ## We'll be doing this from scratch, so all imports will come from 
@@ -40,13 +41,13 @@ import pandas as pd
 # ```
 # Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
 
-# In[ ]:
+# In[2]:
 
 
-HOST = "172.28.0.3"
+HOST = "172.19.0.3"
 
 
-# In[4]:
+# In[3]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -60,10 +61,17 @@ API_TABLE = {
 }
 
 CATALOG_INDEX_TABLE = {
-    "COL_COLL_NAME": "501",
-    "COL_D_DATA_ID": "401",
-    "COL_DATA_NAME": "403"
-    "COL_COLL_INHERITANCE": "506"
+    "COL_COLL_NAME"       :"501",
+    "COL_D_DATA_ID"       :"401",
+    "COL_DATA_NAME"       :"403",
+    "COL_COLL_INHERITANCE":"506",
+    "COL_DATA_MODE"       :"421",
+    "COL_DATA_SIZE"       :"407",
+    "COL_D_MODIFY_TIME"   :"420",
+    "COL_D_CREATE_TIME"   :"419",
+}
+CATALOG_REVERSE_INDEX_TABLE = {
+    v:k for k,v in CATALOG_INDEX_TABLE.items()
 }
 
 
@@ -439,9 +447,11 @@ send_msg(stat_obj_inp, conn)
 h, m = recv(conn)
 
 
+# # Querying for the Data Objects in a Container <a class="anchor" id="data_objects_query"></a>
+# 
 # Now we know our target is there. Let's go ahead and read its contents. This happens through a genQuery. For details about the first-generation GenQuery API, see [here](https://github.com/irods/irods_docs/blob/main/docs/developers/library_examples.md#querying-the-catalog-using-general-queries). For information about the GenQuery2 interface (under development as of time of writing), see [here](https://www.youtube.com/watch?v=3dR_JoGA6wA&t=654s&ab_channel=TheiRODSConsortium).
 
-# In[25]:
+# In[33]:
 
 
 def gen_query(
@@ -494,33 +504,36 @@ def spec_query(
     """)
     ret = append_kvp(ret, cond_input)
     
-    return ET.tostring(ret).decode("utf-8").replace(" ", "").replace("\n", "").encode("utf-8")
+    return ET.tostring(ret)
 
 
-# In[26]:
+# In[34]:
 
 
-## This query grabs the inheritance flag of the target collection
 gq = gen_query(
-    cond_input={"zone":"tempZone"},
     select_inp={
-        CATALOG_INDEX_TABLE["COL_COLL_INHERITANCE"]:"1"
+        CATALOG_INDEX_TABLE["COL_COLL_NAME"]    :"1",
+        CATALOG_INDEX_TABLE["COL_DATA_NAME"]    :"1",
+        CATALOG_INDEX_TABLE["COL_D_DATA_ID"]    :"1",
+        CATALOG_INDEX_TABLE["COL_DATA_MODE"]    :"1",
+        CATALOG_INDEX_TABLE["COL_DATA_SIZE"]    :"1",
+        CATALOG_INDEX_TABLE["COL_D_MODIFY_TIME"]:"1",
+        CATALOG_INDEX_TABLE["COL_D_CREATE_TIME"]:"1"
     },
-    sql_cond_inp={ ## This dictionary contains pairs of columns and WHERE-clauses applied to that column
-                   ## in the query
-        CATALOG_INDX_TABLE["COL_COLL_NAME"]:"= '/tempZone/home/rods'"
+    sql_cond_inp={
+        CATALOG_INDEX_TABLE["COL_COLL_NAME"]:"= '/tempZone/home/rods'"
     }
 )
 
 
 # *NB:* It might be easier to make sense of the server's response if you make sure the directory you're about to stat is populated.
 
-# One quick thing before we send this over to the server: the iRODS dialect of XML has a few quirks related to encoding special characters. Some special characters it does not escape at all. For others, it uses a non-standard encoding. For that reason, we'll need to write some functions that translate between standard XML and iRODS XML.
+# One quick thing before we send this over to the server: the iRODS dialect of XML has a few quirks related to encoding special characters. Some special characters it does not escape at all. For others, it uses a non-standard encoding. For example, iRODS XML does not distinguish between "\`" and "'" (backticks and single quotes). For these reasons, we'll need to write some functions that translate between standard XML and iRODS XML.
 
-# In[27]:
+# In[36]:
 
 
-standard_to_irods = {
+STANDARD_TO_IRODS_TABLE = {
   b"&#34;":b"&quot;",
     
   b"&#39;":b"&apos;",
@@ -536,27 +549,18 @@ standard_to_irods = {
 
 
 def translate_xml_to_irods_dialect(xml_bytes):
-    output = b''
+    for prefix in standard_to_irods:
+        xml_bytes = xml_bytes.replace(prefix, STANDARD_TO_IRODS_TABLE[prefix])
     return xml_bytes
-    while len(xml_bytes) > 0:
-        for prefix in standard_to_irods:
-            if len(xml_bytes) == 0:
-                break
-            if xml_bytes.startswith(prefix):
-                output += standard_to_irods[prefix]
-                xml_bytes = xml_bytes[len(prefix):]
-            else:
-                output += bytes(xml_bytes[0])
-                xml_bytes = xml_bytes[1:]
-    return output
-    
+
 gq = translate_xml_to_irods_dialect(gq)
+print(gq)
 h = header(HeaderType.RODS_API_REQ.value, 
            gq, 
            int_info=API_TABLE["GEN_QUERY_AN"])
 
 
-# In[28]:
+# In[37]:
 
 
 send_header(h, conn)
@@ -565,7 +569,7 @@ send_msg(gq, conn)
 
 # The results from this GenQuery might be a little hard to grok. 
 
-# In[29]:
+# In[38]:
 
 
 h, m = recv(conn)
@@ -573,51 +577,33 @@ h, m = recv(conn)
 
 # To demonstrate how they amount to valid SQL results, let's translate these into a Pandas DataFrame. To see a similar example in C++ that operates above the protocol level, refer to the genQuery1 documentation linked above.
 
-# In[ ]:
+# In[47]:
 
 
-def read_gen_query_results_into_dataframe(gqr: bytes):    
-    gqr = ET.fromstring(gqr.decode('utf-8'))
-    
+def read_gen_query_results_into_dataframe(gqr):    
     ## Each SqlResult_PI is a column of data
     ## Collect them all into a list
     ## We can safely ignore the "reslen" attribute since the Python XML 
     ## API already knows how large each string is, but you might use it for error checking
-    df = pd.DataFrame()
-    
     row_cnt = int(gqr.find("rowCnt").text)
     attribute_cnt = int(gqr.find("attriCnt").text)
     
+    data = {}
     for result in gqr.findall("SqlResult_PI"):
-        attri_inx = int(result.find("attriInx").text)
-        res_len = int(result.find("reslen").text)
-        value = result.find("value").text
-        col = []
-        while len(value) > 0:
-            item = value[:res_len]
-            item = item[item.find()]
+        attri_inx = result.find("attriInx").text
+        if attri_inx == "0":
+            continue
+        # res_len = int(result.find("reslen").text)
+        values = result.findall("value")
+        col = [value.text for value in values]
+        data[CATALOG_REVERSE_INDEX_TABLE[attri_inx]] = col
             
-    return df
+    return pd.DataFrame(data)
+
+read_gen_query_results_into_dataframe(m)
 
 
-# In[ ]:
-
-
-## This genQuery grabs the actual data objects 
-## that live in the collection we care about
-gq = gen_query(
-    select_inp={
-        CATALOG_INDEX_TABLE["COL_COLL_INHERITANCE"]:"1"
-    },
-    sql_cond_inp={
-        CATALOG_INDEX_TABLE["COL_COLL_NAME"]:"= 'rods'", 
-        CATALOG_INDEX_TABLE["COL_DATA_NAME"]:"= '/tempZone/home'"
-    }
-)
-print(gq)
-
-
-# In[ ]:
+# In[48]:
 
 
 def disconnect(sock):
@@ -626,7 +612,7 @@ def disconnect(sock):
     )
 
 
-# In[ ]:
+# In[49]:
 
 
 disconnect(conn)
