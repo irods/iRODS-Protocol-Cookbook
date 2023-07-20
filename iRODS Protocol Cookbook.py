@@ -363,11 +363,6 @@ def data_obj_inp(
     ret = ET.tostring(obj_inp).decode("utf-8").replace("\n", "").replace(" ", "").encode('utf-8')
     print(ret)
     return ret
-    
-def parse_key_val_pair_into_dict(kvp: ET):
-    ret = {}
-
-    return ret
 
 
 # Next, we'll need some utility methods. How these work might not be totally obvious, so consider reading ahead and revisiting these once you've seen how it's used in the stat API Call.
@@ -474,6 +469,10 @@ def gen_query(
 
 ## The Catalog ships with a table of SQL functions that can perform common functions
 ## The first link above also has an example of a specific query.
+## Note that the server will send back a GenQueryOut_PI; there is no 
+## message type dedicated to results from a specQuery. However, all the SqlResult_PIs
+## will have `attriInx` set to 0, since knowing the query string allows the client to 
+## reconstruct the order of the columns.
 def spec_query(
     sql,
     arg_1,
@@ -507,11 +506,11 @@ gq = gen_query(
     select_inp={
         CATALOG_INDEX_TABLE["COL_COLL_INHERITANCE"]:"1"
     },
-    sql_cond_inp={
+    sql_cond_inp={ ## This dictionary contains pairs of columns and WHERE-clauses applied to that column
+                   ## in the query
         CATALOG_INDX_TABLE["COL_COLL_NAME"]:"= '/tempZone/home/rods'"
     }
 )
-print(gq)
 
 
 # *NB:* It might be easier to make sense of the server's response if you make sure the directory you're about to stat is populated.
@@ -580,12 +579,10 @@ h, m = recv(conn)
 def read_gen_query_results_into_dataframe(gqr: bytes):    
     gqr = ET.fromstring(gqr.decode('utf-8'))
     
-    ## Each SqlResult_PI is a row of data
+    ## Each SqlResult_PI is a column of data
     ## Collect them all into a list
     ## We can safely ignore the "reslen" attribute since the Python XML 
     ## API already knows how large each string is, but you might use it for error checking
-    results = [result.find("value").text for result in gqr.findall("SqlResult_PI")]
-    
     df = pd.DataFrame()
     
     row_cnt = int(gqr.find("rowCnt").text)
@@ -595,7 +592,10 @@ def read_gen_query_results_into_dataframe(gqr: bytes):
         attri_inx = int(result.find("attriInx").text)
         res_len = int(result.find("reslen").text)
         value = result.find("value").text
-            
+        col = []
+        while len(value) > 0:
+            item = value[:res_len]
+            item = item[item.find()]
             
     return df
 
