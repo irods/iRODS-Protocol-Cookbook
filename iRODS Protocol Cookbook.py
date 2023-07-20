@@ -13,6 +13,7 @@
 # * [ils](#ils)
 #     - [Stat a collection](#stat_coll)
 #     - [Querying for the Data Objects in a Container](#data_objects_query)
+# * [data transfer](#data_transfer)
 
 # In[1]:
 
@@ -113,7 +114,7 @@ def header(header_type: HeaderType, msg: bytes,
                                                                ## through the pipe.
 
 
-# In[5]:
+# In[37]:
 
 
 def send_header(header: bytes, sock: socket) -> None:
@@ -126,20 +127,30 @@ def send_header(header: bytes, sock: socket) -> None:
     sock.sendall(header_len)
     sock.sendall(header)
     
-def send_msg(msg: bytes, sock: socket) -> None:
+def send_msg(msg: bytes, 
+             sock: socket, 
+             error_buf: bytes = None,
+             bs_buf: bytes = None) -> None:
     sock.sendall(msg)
+        
+    if error_buf:
+        sock.sendall(error_buf)
+    if bs_buf:
+        sock.sendall(bs_buf)
     
 def recv(sock: socket) -> [ET, ET]:
     header_len = int.from_bytes(sock.recv(4), byteorder='big')
     print(f"HEADER LEN: [{header_len}]")
     header = sock.recv(header_len).decode("utf-8")
     print(f"HEADER: [{header}]")
+    if header_len > 0:
+        msg = sock.recv(
+            int(ET.fromstring(header).find("msgLen").text)).decode("utf-8")
+        print(f"MSG: [{msg}]")
+        return ET.fromstring(header), ET.fromstring(msg)
+    else:
+        return ET.fromstring(header), None
     
-    msg = sock.recv(
-        int(ET.fromstring(header).find("msgLen").text)).decode("utf-8")
-    print(f"MSG: [{msg}]")
-    
-    return ET.fromstring(header), ET.fromstring(msg)
 
 
 # ## Start of the "Real Work" <a class="anchor" id="start_of_real_work"></a>
@@ -454,7 +465,7 @@ h, m = recv(conn)
 # 
 # Now we know our target is there. Let's go ahead and read its contents. This happens through a genQuery. For details about the first-generation GenQuery API, see [here](https://github.com/irods/irods_docs/blob/main/docs/developers/library_examples.md#querying-the-catalog-using-general-queries). For information about the GenQuery2 interface (under development as of time of writing), see [here](https://www.youtube.com/watch?v=3dR_JoGA6wA&t=654s&ab_channel=TheiRODSConsortium).
 
-# In[33]:
+# In[25]:
 
 
 def gen_query(
@@ -510,7 +521,7 @@ def spec_query(
     return ET.tostring(ret)
 
 
-# In[34]:
+# In[26]:
 
 
 gq = gen_query(
@@ -533,7 +544,7 @@ gq = gen_query(
 
 # One quick thing before we send this over to the server: the iRODS dialect of XML has a few quirks related to encoding special characters. Some special characters it does not escape at all. For others, it uses a non-standard encoding. For example, iRODS XML does not distinguish between "\`" and "'" (backticks and single quotes). For these reasons, we'll need to write some functions that translate between standard XML and iRODS XML.
 
-# In[36]:
+# In[27]:
 
 
 STANDARD_TO_IRODS_TABLE = {
@@ -552,7 +563,7 @@ STANDARD_TO_IRODS_TABLE = {
 
 
 def translate_xml_to_irods_dialect(xml_bytes):
-    for prefix in standard_to_irods:
+    for prefix in STANDARD_TO_IRODS_TABLE:
         xml_bytes = xml_bytes.replace(prefix, STANDARD_TO_IRODS_TABLE[prefix])
     return xml_bytes
 
@@ -563,7 +574,7 @@ h = header(HeaderType.RODS_API_REQ.value,
            int_info=API_TABLE["GEN_QUERY_AN"])
 
 
-# In[37]:
+# In[28]:
 
 
 send_header(h, conn)
@@ -572,7 +583,7 @@ send_msg(gq, conn)
 
 # The results from this GenQuery might be a little hard to grok. 
 
-# In[38]:
+# In[29]:
 
 
 h, m = recv(conn)
@@ -580,7 +591,7 @@ h, m = recv(conn)
 
 # To demonstrate how they amount to valid SQL results, let's translate these into a Pandas DataFrame. To see a similar example in C++ that operates above the protocol level, refer to the genQuery1 documentation linked above.
 
-# In[47]:
+# In[30]:
 
 
 def read_gen_query_results_into_dataframe(gqr):    
@@ -611,7 +622,7 @@ read_gen_query_results_into_dataframe(m)
 # Now that we can see the contents of this collection, let's create a new data object inside of it. 
 # This will show cases some of the more advanced features of `condInpt`. 
 
-# In[50]:
+# In[31]:
 
 
 ## Suppose we want to transfer a file containing this text.
@@ -625,11 +636,11 @@ int main() {
 """
 
 
-# In[ ]:
+# In[32]:
 
 
 data_object_name = "hello.cpp"
-data_size=len(hello_cpp.encode("utf-8"))
+data_size=str(len(hello_cpp.encode("utf-8")))
 iput_payload = data_obj_inp(
     f"/tempZone/home/rods/{data_object_name}",
     open_flags="2",
@@ -638,12 +649,26 @@ iput_payload = data_obj_inp(
     cond_input={
         "dataType":"generic",
         "dataSize":data_size,
-        "dataIncluded":""    ## Generally, keys with empty values in cond_input act as flags
+        "dataIncluded":" "    ## Generally, keys with empty values in cond_input act as flags
     }
 )
+h = header(HeaderType.RODS_API_REQ.value, 
+           iput_payload, 
+           int_info=API_TABLE["DATA_OBJ_PUT_AN"],
+           bs_len=len(hello_cpp.encode("utf-8")))
+send_header(h, conn)
+send_msg(iput_payload, conn, bs_buf=hello_cpp.encode("utf-8"))
 
 
-# In[48]:
+# Once you've received the response from the server and verified that `
+
+# In[38]:
+
+
+h, m = recv(conn)
+
+
+# In[34]:
 
 
 def disconnect(sock):
@@ -652,15 +677,9 @@ def disconnect(sock):
     )
 
 
-# In[49]:
+# In[35]:
 
 
 disconnect(conn)
 conn.close()
-
-
-# In[ ]:
-
-
-
 
