@@ -48,7 +48,7 @@ import pandas as pd
 HOST = "172.19.0.3"
 
 
-# In[3]:
+# In[ ]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -59,7 +59,8 @@ API_TABLE = {
     "AUTHENTICATION_APN":110000, ## The API number for the 4.3.0 auth framework
     "OBJ_STAT_AN":633,
     "GEN_QUERY_AN":702,
-    "DATA_OBJ_PUT_AN": 606
+    "DATA_OBJ_PUT_AN": 606,
+    "DATA_OBJ_OPEN_AN": 602
 }
 
 ## These provide indices into the catalog,
@@ -660,9 +661,40 @@ send_header(h, conn)
 send_msg(iput_payload, conn, bs_buf=hello_cpp.encode("utf-8"))
 
 
-# Once you've received the response from the server and verified that `
+# Once you've received the response from the server and verified that `intInfo` is zero, go re-run the genQuery which produced the ls you ran before. You should see new file there.
 
 # In[38]:
+
+
+h, m = recv(conn)
+
+
+# ## Streaming <a class="anchor" id="data_transfer"></a>
+# 
+# Modern iRODS versions implement parallel transfer using multiple streams. This documentation won't implement parallel transfer, but will show how to use the streaming API that it is built on top of.
+
+# In[ ]:
+
+
+## We'll open this file, seek past #includes and read. 
+## Streamed putting works similarly, and in general
+## you can think of these calls as analogous to their UNIX counterparts.
+streaming_open_request = data_obj_inp(
+    "/tempZone/home/rods/hello.cpp",
+    open_flags="2",
+    data_size="-1" ## We're getting the data from somewhere else,
+                   ## so obviously we don't know how big it is
+)
+h = header(
+    HeaderType.RODS_API_REQ.value,
+    streaming_open_request,
+    int_info=API_TABLE["DATA_OBJ_OPEN_AN"]
+)
+send_header(h, conn)
+send_msg(streaming_open_request, conn)
+
+
+# In[ ]:
 
 
 h, m = recv(conn)
