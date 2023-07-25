@@ -31,14 +31,17 @@ import pandas as pd
 # * [ils](#ils)
 #     - [Stat a collection](#stat_coll)
 #     - [Querying for the Data Objects in a Container](#data_objects_query)
-# * [data transfer](#data_transfer)
+# * [Data transfer](#data_transfer)
+# * [Streaming](#streaming)
+# * [Admin](#admin)
+# * [Disconnct](#disconnect)
 
 # This tutorial assumes you have deployed iRODS in Docker using
 # the script stand_it_up.py from the iRODS Testing Environment, 
 # which can be found on Github [here](https://github.com/irods/irods_testing_environment)
 # To find the IP address associated with your Docker container, you can run this one-liner:
 # ```bash
-# docker inspect   -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ubuntu-2004-postgres-1012_irods-catalog-provider_1
+# docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ubuntu-2004-postgres-1012_irods-catalog-provider_1
 # ```
 # Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
 
@@ -63,7 +66,8 @@ API_TABLE = {
     "DATA_OBJ_OPEN_AN": 602,
     "DATA_OBJ_LSEEK_AN": 674,
     "DATA_OBJ_CLOSE_AN": 673,
-    "DATA_OBJ_READ_AN": 675
+    "DATA_OBJ_READ_AN": 675,
+    "GENERAL_ADMIN_AN": 701
 }
 
 ## These provide indices into the catalog,
@@ -776,7 +780,9 @@ h, m = recv(conn)
 # In[40]:
 
 
-reader = opened_data_obj_inp(l1_descriptor, len_=8192)
+reader = opened_data_obj_inp(l1_descriptor, len_=8192) ## The len parameter is important -- 
+                                                       ## this tells the server how many 
+                                                       ## bytes to stream back to the client
 print(reader)
 h = header(
     HeaderType.RODS_API_REQ.value,
@@ -804,12 +810,80 @@ h = header(
 )
 
 
-# In[34]:
+# In[43]:
 
 
 send_header(h, conn)
 send_msg(closer, conn)
 
+
+# # Admin <a class="anchor" id="admin"></a>
+# Next, we're going to look at how to perform admin tasks. Recall from the section where we implemented "ils" that the iRODS server ships with prebuilt queries stored in the catalog. These are called "specific queries." The iCommand `asq` allows administrators to add new catalog queries. Let's implement `asq` straight from the protocol.
+
+# In[47]:
+
+
+dummy_spec_query = "SELECT data_name FROM r_data_main"
+def general_admin_inp(
+    arg_zero=" ",
+    arg_one=" ",
+    arg_two=" ",
+    arg_three=" ",
+    arg_four=" ",
+    arg_five=" ",
+    arg_six=" ",
+    arg_seven=" ",
+    arg_eight=" ",
+    arg_nine=" "
+):
+    return f"""
+    <generalAdminInp_PI>
+        <arg0>{arg_zero}</arg0>
+        <arg1>{arg_one}</arg1>
+        <arg2>{arg_two}</arg2>
+        <arg3>{arg_three}</arg3>
+        <arg4>{arg_four}</arg4>
+        <arg5>{arg_five}/arg5>
+        <arg6>{arg_six}</arg6>
+        <arg7>{arg_seven}</arg7>
+        <arg8>{arg_eight}</arg8>
+        <arg9>{arg_nine}</arg9>
+    </generalAdminInp_PI>
+    """.replace(" ", "").replace("\n", "").encode("utf-8")
+
+
+# In[48]:
+
+
+new_spec_query_req = general_admin_inp(
+    arg_zero="add",
+    arg_one="specificQuery",
+    arg_two=dummy_spec_query,
+    arg_three="dummy_spec_query"
+)
+h = header(
+    HeaderType.RODS_API_REQ.value,
+    new_spec_query_req,
+    int_info=API_TABLE["GENERAL_ADMIN_AN"]
+)
+
+
+# In[46]:
+
+
+send_header(h, conn)
+send_msg(new_spec_query_req, conn)
+
+
+# In[ ]:
+
+
+h, m = recv(conn) ## Assuming int_info is 0, you should now be able to run your query on the command line like this:
+                  ## "iquest --no-page --sql dummy_spec_query"
+
+
+# # Disconnect <a class="anchor" id="disconnect"></a>
+# Finally, we'll disconnect from the iRODS server.
 
 # In[35]:
 
@@ -825,22 +899,4 @@ def disconnect(sock):
 
 disconnect(conn)
 conn.close()
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
-
-
-# In[ ]:
-
-
-
 
