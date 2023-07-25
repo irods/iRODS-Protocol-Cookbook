@@ -1,20 +1,6 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# # IRODS Protocol Cookbook
-# 
-# This notebook will provide example implementations of key 
-# operations in the iRODS protocol. Read from the beginnging or use this table of contents to skip to the section that interests you. Once you've jumped to that spot, make sure the cell with the anchor is selected and run `Cell > Run All Above`.
-# 
-# ## Table of Contents
-# 
-# * [Handshake](#handshake)
-# * [Authentication](#authentication)
-# * [ils](#ils)
-#     - [Stat a collection](#stat_coll)
-#     - [Querying for the Data Objects in a Container](#data_objects_query)
-# * [data transfer](#data_transfer)
-
 # In[1]:
 
 
@@ -33,6 +19,20 @@ from enum import Enum
 import pandas as pd
 
 
+# # IRODS Protocol Cookbook
+# 
+# This notebook will provide example implementations of key 
+# operations in the iRODS protocol. Read from the beginnging or use this table of contents to skip to the section that interests you. Once you've jumped to that spot, make sure the cell with the anchor is selected and run `Cell > Run All Above`.
+# 
+# ## Table of Contents
+# 
+# * [Handshake](#handshake)
+# * [Authentication](#authentication)
+# * [ils](#ils)
+#     - [Stat a collection](#stat_coll)
+#     - [Querying for the Data Objects in a Container](#data_objects_query)
+# * [data transfer](#data_transfer)
+
 # This tutorial assumes you have deployed iRODS in Docker using
 # the script stand_it_up.py from the iRODS Testing Environment, 
 # which can be found on Github [here](https://github.com/irods/irods_testing_environment)
@@ -45,10 +45,10 @@ import pandas as pd
 # In[2]:
 
 
-HOST = "172.19.0.3"
+HOST = "172.27.0.3"
 
 
-# In[ ]:
+# In[3]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -60,7 +60,10 @@ API_TABLE = {
     "OBJ_STAT_AN":633,
     "GEN_QUERY_AN":702,
     "DATA_OBJ_PUT_AN": 606,
-    "DATA_OBJ_OPEN_AN": 602
+    "DATA_OBJ_OPEN_AN": 602,
+    "DATA_OBJ_LSEEK_AN": 674,
+    "DATA_OBJ_CLOSE_AN": 673,
+    "DATA_OBJ_READ_AN": 675
 }
 
 ## These provide indices into the catalog,
@@ -101,6 +104,7 @@ class HeaderType(Enum):
 
 def header(header_type: HeaderType, msg: bytes, 
            error_len=0, bs_len=0, int_info=0) -> bytes:
+    print(f"[send_header] type(msg): [{type(msg)}]")
     return f"""
         <MsgHeader_PI>
             <type>{header_type}</type>
@@ -115,7 +119,7 @@ def header(header_type: HeaderType, msg: bytes,
                                                                ## through the pipe.
 
 
-# In[37]:
+# In[5]:
 
 
 def send_header(header: bytes, sock: socket) -> None:
@@ -132,6 +136,7 @@ def send_msg(msg: bytes,
              sock: socket, 
              error_buf: bytes = None,
              bs_buf: bytes = None) -> None:
+    print(f"[send_msg] type(msg): [{type(msg)}]")
     sock.sendall(msg)
         
     if error_buf:
@@ -145,10 +150,15 @@ def recv(sock: socket) -> [ET, ET]:
     header = sock.recv(header_len).decode("utf-8")
     print(f"HEADER: [{header}]")
     if header_len > 0:
-        msg = sock.recv(
-            int(ET.fromstring(header).find("msgLen").text)).decode("utf-8")
-        print(f"MSG: [{msg}]")
-        return ET.fromstring(header), ET.fromstring(msg)
+        msg_len = int(ET.fromstring(header).find("msgLen").text)
+        if msg_len > 0:
+            msg = sock.recv(
+                int(ET.fromstring(header).find("msgLen").text)).decode("utf-8")
+
+            print(f"MSG: [{msg}]")
+            return ET.fromstring(header), ET.fromstring(msg)
+        else:
+            return ET.fromstring(header), None
     else:
         return ET.fromstring(header), None
     
@@ -663,7 +673,7 @@ send_msg(iput_payload, conn, bs_buf=hello_cpp.encode("utf-8"))
 
 # Once you've received the response from the server and verified that `intInfo` is zero, go re-run the genQuery which produced the ls you ran before. You should see new file there.
 
-# In[38]:
+# In[33]:
 
 
 h, m = recv(conn)
@@ -673,7 +683,7 @@ h, m = recv(conn)
 # 
 # Modern iRODS versions implement parallel transfer using multiple streams. This documentation won't implement parallel transfer, but will show how to use the streaming API that it is built on top of.
 
-# In[ ]:
+# In[34]:
 
 
 ## We'll open this file, seek past #includes and read. 
@@ -694,13 +704,114 @@ send_header(h, conn)
 send_msg(streaming_open_request, conn)
 
 
-# In[ ]:
+# In[35]:
 
 
 h, m = recv(conn)
 
 
+# In[36]:
+
+
+print(h.find("intInfo").text)
+
+
+# In[37]:
+
+
+## This time intInfo, if it is positive, will be the value of the L1 Descriptor return by the server,
+## which is an opaque handle to a replica of the data object we just opened.
+## Notice that it's 3, just like you'd expect opening the first file on a UNIX system.
+l1_descriptor = h.find("intInfo").text
+seek_len = 20
+
+## These constants are taken from their Linux equivalents
+## and work the same way
+SEEK_SET = 0
+SEEK_CUR = 1
+SEEK_END = 2
+
+def opened_data_obj_inp(l1_desc,
+                       len_=0,
+                       whence=SEEK_SET,
+                       opr_type=0,
+                       offset=0,
+                       bytes_written=0,
+                       cond_input={}):
+    ret = ET.fromstring(f"""
+    <OpenedDataObjInp_PI>
+        <l1descInx>{l1_desc}</l1descInx>
+        <len>{len_}</len>
+        <whence>{whence}</whence>
+        <oprType>{opr_type}</oprType>
+        <offset>{offset}</offset>
+        <bytesWritten>{bytes_written}</bytesWritten>
+    </OpenedDataObjInp_PI>
+    """)
+    
+    ret = append_kvp(ret, cond_input)
+    return ET.tostring(ret).decode("utf-8").replace(" ", "").replace("\n", "").encode("utf-8")
+
+
+# In[38]:
+
+
+seeker = opened_data_obj_inp(l1_descriptor, offset=seek_len)
+print(seeker)
+h = header(
+    HeaderType.RODS_API_REQ.value,
+    seeker,
+    int_info=API_TABLE["DATA_OBJ_LSEEK_AN"]
+)
+send_header(h, conn)
+send_msg(seeker, conn)
+
+
+# In[39]:
+
+
+h, m = recv(conn)
+
+
+# In[40]:
+
+
+reader = opened_data_obj_inp(l1_descriptor, len_=8192)
+print(reader)
+h = header(
+    HeaderType.RODS_API_REQ.value,
+    reader, 
+    int_info=API_TABLE["DATA_OBJ_READ_AN"]
+)
+send_header(h, conn)
+send_msg(reader, conn)
+
+
+# In[41]:
+
+
+h, m = recv(conn)
+
+
+# In[42]:
+
+
+closer = opened_data_obj_inp(l1_descriptor)
+h = header(
+    HeaderType.RODS_API_REQ.value,
+    closer,
+    int_info=API_TABLE["DATA_OBJ_CLOSE_AN"]
+)
+
+
 # In[34]:
+
+
+send_header(h, conn)
+send_msg(closer, conn)
+
+
+# In[35]:
 
 
 def disconnect(sock):
@@ -709,9 +820,27 @@ def disconnect(sock):
     )
 
 
-# In[35]:
+# In[36]:
 
 
 disconnect(conn)
 conn.close()
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
+
+
+# In[ ]:
+
+
+
 
