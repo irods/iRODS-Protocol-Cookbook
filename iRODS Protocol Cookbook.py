@@ -868,14 +868,14 @@ h = header(
 )
 
 
-# In[46]:
+# In[49]:
 
 
 send_header(h, conn)
 send_msg(new_spec_query_req, conn)
 
 
-# In[ ]:
+# In[50]:
 
 
 h, m = recv(conn) ## Assuming int_info is 0, you should now be able to run your query on the command line like this:
