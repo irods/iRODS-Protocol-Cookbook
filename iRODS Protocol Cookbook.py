@@ -35,6 +35,8 @@ import pandas as pd
 # * [Streaming](#streaming)
 # * [Admin](#admin)
 # * [Disconnct](#disconnect)
+# * [Rule Exec](#rule_exec)
+# * [Disconnect](#disconnect)
 
 # This tutorial assumes you have deployed iRODS in Docker using
 # the script stand_it_up.py from the iRODS Testing Environment, 
@@ -48,7 +50,7 @@ import pandas as pd
 # In[2]:
 
 
-HOST = "172.27.0.3"
+HOST = "172.19.0.3"
 
 
 # In[3]:
@@ -67,7 +69,8 @@ API_TABLE = {
     "DATA_OBJ_LSEEK_AN": 674,
     "DATA_OBJ_CLOSE_AN": 673,
     "DATA_OBJ_READ_AN": 675,
-    "GENERAL_ADMIN_AN": 701
+    "GENERAL_ADMIN_AN": 701,
+    "EXEC_MY_RULE_AN": 625
 }
 
 ## These provide indices into the catalog,
@@ -140,7 +143,6 @@ def send_msg(msg: bytes,
              sock: socket, 
              error_buf: bytes = None,
              bs_buf: bytes = None) -> None:
-    print(f"[send_msg] type(msg): [{type(msg)}]")
     sock.sendall(msg)
         
     if error_buf:
@@ -151,27 +153,34 @@ def send_msg(msg: bytes,
 def recv(sock: socket) -> [ET, ET]:
     header_len = int.from_bytes(sock.recv(4), byteorder='big')
     print(f"HEADER LEN: [{header_len}]")
-    header = sock.recv(header_len).decode("utf-8")
-    print(f"HEADER: [{header}]")
-    if header_len > 0:
-        msg_len = int(ET.fromstring(header).find("msgLen").text)
+    header = ET.fromstring(sock.recv(header_len).decode("utf-8"))
+    ET.dump(header)
+    if header_len > 0: ## TODO: It's odd that this is included as a case because something would be really
+                       ## broken if this were true
+        msg_len = int(header.find("msgLen").text)
         if msg_len > 0:
-            msg = sock.recv(
-                int(ET.fromstring(header).find("msgLen").text)).decode("utf-8")
-
-            print(f"MSG: [{msg}]")
-            return ET.fromstring(header), ET.fromstring(msg)
+            msg = ET.fromstring(sock.recv(
+                int(header.find("msgLen").text)).decode("utf-8"))
+            ET.dump(msg)
+            bs_len = int(header.find("bsLen").text)
+            error_len = int(header.find("errorLen").text)
+            if error_len > 0:
+                print(sock.recv(error_len))
+            if bs_len > 0:
+                print(sock.recv(bs_len))
+                
+            return header, msg
         else:
-            return ET.fromstring(header), None
+            return header, None
     else:
-        return ET.fromstring(header), None
+        return header, None
     
 
 
 # ## Start of the "Real Work" <a class="anchor" id="start_of_real_work"></a>
 # Note that even if you are using a plugin for authentication, iRODS may still refer to the information in the StartupPack_PI during authentication. If you are experiencing bugs during that step, check your Startup Pack as well as the structures associated with your specific plugin.
 
-# In[6]:
+# In[48]:
 
 
 class IrodsProt(Enum):
@@ -820,7 +829,7 @@ send_msg(closer, conn)
 # # Admin <a class="anchor" id="admin"></a>
 # Next, we're going to look at how to perform admin tasks. Recall from the section where we implemented "ils" that the iRODS server ships with prebuilt queries stored in the catalog. These are called "specific queries." The iCommand `asq` allows administrators to add new catalog queries. Let's implement `asq` straight from the protocol.
 
-# In[47]:
+# In[44]:
 
 
 dummy_spec_query = "SELECT data_name FROM r_data_main"
@@ -852,7 +861,7 @@ def general_admin_inp(
     """.replace(" ", "").replace("\n", "").encode("utf-8")
 
 
-# In[48]:
+# In[45]:
 
 
 new_spec_query_req = general_admin_inp(
@@ -868,24 +877,33 @@ h = header(
 )
 
 
-# In[49]:
+# In[46]:
 
 
 send_header(h, conn)
 send_msg(new_spec_query_req, conn)
 
 
-# In[50]:
+# In[47]:
 
 
 h, m = recv(conn) ## Assuming int_info is 0, you should now be able to run your query on the command line like this:
                   ## "iquest --no-page --sql dummy_spec_query"
 
 
+# # Rule Exec <a class="anchor" id="rule_exec"></a>
+# The last thing we'll look at is sending rule execution requests.
+
+# In[ ]:
+
+
+def 
+
+
 # # Disconnect <a class="anchor" id="disconnect"></a>
 # Finally, we'll disconnect from the iRODS server.
 
-# In[35]:
+# In[ ]:
 
 
 def disconnect(sock):
@@ -894,9 +912,15 @@ def disconnect(sock):
     )
 
 
-# In[36]:
+# In[ ]:
 
 
 disconnect(conn)
 conn.close()
+
+
+# In[ ]:
+
+
+
 
