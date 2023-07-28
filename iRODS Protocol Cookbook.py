@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[58]:
 
 
 ## We'll be doing this from scratch, so all imports will come from 
@@ -34,7 +34,6 @@ import pandas as pd
 # * [Data transfer](#data_transfer)
 # * [Streaming](#streaming)
 # * [Admin](#admin)
-# * [Disconnct](#disconnect)
 # * [Rule Exec](#rule_exec)
 # * [Disconnect](#disconnect)
 
@@ -47,13 +46,13 @@ import pandas as pd
 # ```
 # Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
 
-# In[2]:
+# In[59]:
 
 
 HOST = "172.19.0.3"
 
 
-# In[3]:
+# In[60]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -70,7 +69,8 @@ API_TABLE = {
     "DATA_OBJ_CLOSE_AN": 673,
     "DATA_OBJ_READ_AN": 675,
     "GENERAL_ADMIN_AN": 701,
-    "EXEC_MY_RULE_AN": 625
+    "EXEC_MY_RULE_AN": 625,
+    "USER_ADMIN_AN": 714
 }
 
 ## These provide indices into the catalog,
@@ -83,7 +83,7 @@ CATALOG_INDEX_TABLE = {
     "COL_DATA_MODE"       :"421",
     "COL_DATA_SIZE"       :"407",
     "COL_D_MODIFY_TIME"   :"420",
-    "COL_D_CREATE_TIME"   :"419",
+    "COL_D_CREATE_TIME"   :"419"
 }
 CATALOG_REVERSE_INDEX_TABLE = {
     v:k for k,v in CATALOG_INDEX_TABLE.items()
@@ -96,7 +96,7 @@ CATALOG_REVERSE_INDEX_TABLE = {
 # and read messages, referring to this part to figure out how
 # the part you're interested in was implemented.
 
-# In[4]:
+# In[61]:
 
 
 ## We can define these in an enum since 
@@ -126,7 +126,7 @@ def header(header_type: HeaderType, msg: bytes,
                                                                ## through the pipe.
 
 
-# In[5]:
+# In[62]:
 
 
 def send_header(header: bytes, sock: socket) -> None:
@@ -158,19 +158,26 @@ def recv(sock: socket) -> [ET, ET]:
     if header_len > 0: ## TODO: It's odd that this is included as a case because something would be really
                        ## broken if this were true
         msg_len = int(header.find("msgLen").text)
+        bs_len = int(header.find("bsLen").text)
+        error_len = int(header.find("errorLen").text)
         if msg_len > 0:
             msg = ET.fromstring(sock.recv(
                 int(header.find("msgLen").text)).decode("utf-8"))
             ET.dump(msg)
-            bs_len = int(header.find("bsLen").text)
-            error_len = int(header.find("errorLen").text)
             if error_len > 0:
+                print("[recv] getting error stack")
                 print(sock.recv(error_len))
             if bs_len > 0:
+                print("[recv] getting bs buf")
                 print(sock.recv(bs_len))
-                
             return header, msg
         else:
+            if error_len > 0:
+                print("[recv] getting error stack")
+                print(sock.recv(error_len))
+            if bs_len > 0:
+                print("[recv] getting bs buf")
+                print(sock.recv(bs_len))
             return header, None
     else:
         return header, None
@@ -180,7 +187,7 @@ def recv(sock: socket) -> [ET, ET]:
 # ## Start of the "Real Work" <a class="anchor" id="start_of_real_work"></a>
 # Note that even if you are using a plugin for authentication, iRODS may still refer to the information in the StartupPack_PI during authentication. If you are experiencing bugs during that step, check your Startup Pack as well as the structures associated with your specific plugin.
 
-# In[48]:
+# In[63]:
 
 
 class IrodsProt(Enum):
@@ -220,7 +227,7 @@ def startup_pack(irods_prot=IrodsProt.XML_PROT.value,
 # If at some point the Notebook stops working, remember
 # to manually close the socket.
 
-# In[7]:
+# In[64]:
 
 
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -229,28 +236,28 @@ conn.connect((HOST, PORT))
 
 # ## Handshake <a class="anchor" id="handshake"></a>
 
-# In[8]:
+# In[65]:
 
 
 sp = startup_pack()
 sp
 
 
-# In[9]:
+# In[66]:
 
 
 h = header(HeaderType.RODS_CONNECT.value, sp)
 h
 
 
-# In[10]:
+# In[67]:
 
 
 send_header(h, conn)
 send_msg(sp, conn)
 
 
-# In[11]:
+# In[68]:
 
 
 ## In this Version_PI, status of 0 lets us know that negotiation has been successful.
@@ -265,7 +272,7 @@ h, msg = recv(conn)
 # This API works by exchanging binary buffers between client and server.
 # Since XML must be valid UTF-8, this binary data MUST be base64-encoded.
 
-# In[12]:
+# In[69]:
 
 
 def encode_dict_as_base64_json(d: dict): 
@@ -276,7 +283,7 @@ def encode_dict_as_base64_json(d: dict):
 # The payload is decoded because otherwise Python will 
 # add extra characters to give a string representation of the bytes object
 
-# In[13]:
+# In[70]:
 
 
 def read_base64_into_json(bsix: bytes, trunc=False) -> dict:
@@ -293,7 +300,7 @@ def bin_bytes_buf(payload: dict) -> bytes:
     """.replace(" ", "").replace("\n","").encode('utf8')
 
 
-# In[14]:
+# In[71]:
 
 
 ## Some API-specific parameters
@@ -307,7 +314,7 @@ auth_ctx = {
 }
 
 
-# In[15]:
+# In[72]:
 
 
 initial_auth_msg = bin_bytes_buf(auth_ctx)
@@ -319,7 +326,7 @@ send_header(h, conn)
 send_msg(initial_auth_msg, conn)
 
 
-# In[16]:
+# In[73]:
 
 
 h, m = recv(conn)
@@ -328,7 +335,7 @@ h, m = recv(conn)
 # If you were writing a real client library or application, you would want to check intInfo for error codes
 # so you could respond appropriately. Here, we're going to move on blissfully unaware.
 
-# In[17]:
+# In[74]:
 
 
 auth_ctx = read_base64_into_json(m.find("buf").text, trunc=True)
@@ -336,7 +343,7 @@ request_result = auth_ctx[ 'request_result']
 print(f"REQUEST RESULT: [{request_result}]")
 
 
-# In[18]:
+# In[75]:
 
 
 def pad_password(pw: str) -> bytes:
@@ -354,7 +361,7 @@ challenge_response = bin_bytes_buf(auth_ctx)
 print(challenge_response)
 
 
-# In[19]:
+# In[76]:
 
 
 h = header(HeaderType.RODS_API_REQ.value, 
@@ -366,7 +373,7 @@ send_msg(challenge_response, conn)
 
 # Once again, an `intInfo` of 0 is the auth framework's way of telling us that we've successfully authenticated. Decode the buf frame base64 if you'd like to double check the state of the auth context.
 
-# In[20]:
+# In[77]:
 
 
 h, m = recv(conn)
@@ -380,7 +387,7 @@ h, m = recv(conn)
 
 # First, we'll have to generate a `DataObjInp_PI`. This is a generic message type used for all sorts of operations. It also contains a `KeyValPair_PI`, which is an important data structure in the iRODS protocol. Although it cannot be sent on its own, it is a very important vehicle for parameters. Internally, this `KeyValPair_PI` is a cond_input structure.
 
-# In[21]:
+# In[78]:
 
 
 def data_obj_inp(
@@ -413,7 +420,7 @@ def data_obj_inp(
 
 # Next, we'll need some utility methods. How these work might not be totally obvious, so consider reading ahead and revisiting these once you've seen how it's used in the stat API Call.
 
-# In[22]:
+# In[79]:
 
 
 def append_kvp(et, data):
@@ -465,7 +472,7 @@ def append_ivp(et, data):
     return et
 
 
-# In[23]:
+# In[80]:
 
 
 stat_obj_inp = data_obj_inp("/tempZone/home/rods") 
@@ -479,7 +486,7 @@ send_msg(stat_obj_inp, conn)
 
 # If everything has gone smoothely, you should receive a `RodsObjStat_PI` from the server. That `objType` is 2 tells us that the thing we stat'd was a collection. Since collections are purely virtual objects, `objSize` is 0.
 
-# In[24]:
+# In[81]:
 
 
 h, m = recv(conn)
@@ -489,7 +496,7 @@ h, m = recv(conn)
 # 
 # Now we know our target is there. Let's go ahead and read its contents. This happens through a genQuery. For details about the first-generation GenQuery API, see [here](https://github.com/irods/irods_docs/blob/main/docs/developers/library_examples.md#querying-the-catalog-using-general-queries). For information about the GenQuery2 interface (under development as of time of writing), see [here](https://www.youtube.com/watch?v=3dR_JoGA6wA&t=654s&ab_channel=TheiRODSConsortium).
 
-# In[25]:
+# In[82]:
 
 
 def gen_query(
@@ -545,7 +552,7 @@ def spec_query(
     return ET.tostring(ret)
 
 
-# In[26]:
+# In[83]:
 
 
 gq = gen_query(
@@ -568,7 +575,7 @@ gq = gen_query(
 
 # One quick thing before we send this over to the server: the iRODS dialect of XML has a few quirks related to encoding special characters. Some special characters it does not escape at all. For others, it uses a non-standard encoding. For example, iRODS XML does not distinguish between "\`" and "'" (backticks and single quotes). For these reasons, we'll need to write some functions that translate between standard XML and iRODS XML.
 
-# In[27]:
+# In[84]:
 
 
 STANDARD_TO_IRODS_TABLE = {
@@ -598,7 +605,7 @@ h = header(HeaderType.RODS_API_REQ.value,
            int_info=API_TABLE["GEN_QUERY_AN"])
 
 
-# In[28]:
+# In[85]:
 
 
 send_header(h, conn)
@@ -607,7 +614,7 @@ send_msg(gq, conn)
 
 # The results from this GenQuery might be a little hard to grok. 
 
-# In[29]:
+# In[86]:
 
 
 h, m = recv(conn)
@@ -615,7 +622,7 @@ h, m = recv(conn)
 
 # To demonstrate how they amount to valid SQL results, let's translate these into a Pandas DataFrame. To see a similar example in C++ that operates above the protocol level, refer to the genQuery1 documentation linked above.
 
-# In[30]:
+# In[87]:
 
 
 def read_gen_query_results_into_dataframe(gqr):    
@@ -646,7 +653,7 @@ read_gen_query_results_into_dataframe(m)
 # Now that we can see the contents of this collection, let's create a new data object inside of it. 
 # This will show cases some of the more advanced features of `condInpt`. 
 
-# In[31]:
+# In[88]:
 
 
 ## Suppose we want to transfer a file containing this text.
@@ -660,7 +667,7 @@ int main() {
 """
 
 
-# In[32]:
+# In[89]:
 
 
 data_object_name = "hello.cpp"
@@ -686,7 +693,7 @@ send_msg(iput_payload, conn, bs_buf=hello_cpp.encode("utf-8"))
 
 # Once you've received the response from the server and verified that `intInfo` is zero, go re-run the genQuery which produced the ls you ran before. You should see new file there.
 
-# In[33]:
+# In[90]:
 
 
 h, m = recv(conn)
@@ -696,7 +703,7 @@ h, m = recv(conn)
 # 
 # Modern iRODS versions implement parallel transfer using multiple streams. This documentation won't implement parallel transfer, but will show how to use the streaming API that it is built on top of.
 
-# In[34]:
+# In[91]:
 
 
 ## We'll open this file, seek past #includes and read. 
@@ -717,19 +724,19 @@ send_header(h, conn)
 send_msg(streaming_open_request, conn)
 
 
-# In[35]:
+# In[92]:
 
 
 h, m = recv(conn)
 
 
-# In[36]:
+# In[93]:
 
 
 print(h.find("intInfo").text)
 
 
-# In[37]:
+# In[94]:
 
 
 ## This time intInfo, if it is positive, will be the value of the L1 Descriptor return by the server,
@@ -766,7 +773,7 @@ def opened_data_obj_inp(l1_desc,
     return ET.tostring(ret).decode("utf-8").replace(" ", "").replace("\n", "").encode("utf-8")
 
 
-# In[38]:
+# In[95]:
 
 
 seeker = opened_data_obj_inp(l1_descriptor, offset=seek_len)
@@ -780,13 +787,13 @@ send_header(h, conn)
 send_msg(seeker, conn)
 
 
-# In[39]:
+# In[96]:
 
 
 h, m = recv(conn)
 
 
-# In[40]:
+# In[97]:
 
 
 reader = opened_data_obj_inp(l1_descriptor, len_=8192) ## The len parameter is important -- 
@@ -802,13 +809,13 @@ send_header(h, conn)
 send_msg(reader, conn)
 
 
-# In[41]:
+# In[98]:
 
 
 h, m = recv(conn)
 
 
-# In[42]:
+# In[121]:
 
 
 closer = opened_data_obj_inp(l1_descriptor)
@@ -819,7 +826,7 @@ h = header(
 )
 
 
-# In[43]:
+# In[122]:
 
 
 send_header(h, conn)
