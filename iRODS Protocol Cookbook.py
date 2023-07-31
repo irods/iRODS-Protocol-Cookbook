@@ -94,7 +94,9 @@ CATALOG_REVERSE_INDEX_TABLE = {
 # of the dirty work. 
 # Feel free to skip to [here](#start_of_real_work), where we start using this library to send
 # and read messages, referring to this part to figure out how
-# the part you're interested in was implemented.
+# the part you're interested in was implemented. 
+# 
+# *Notice* that the comment above `def header(...` includes the packing instruction string for `MsgHeader_PI` ("PI" stands for "Packing Instruction"). This string has a special syntax that the iRODS server uses to define these message types.
 
 # In[4]:
 
@@ -109,6 +111,7 @@ class HeaderType(Enum):
     RODS_API_REPLY = "RODS_API_REPLY"
     RODS_VERSION = "RODS_VERSION"
 
+# #define MsgHeader_PI "str type[HEADER_TYPE_LEN]; int msgLen; int errorLen; int bsLen; int intInfo;"
 def header(header_type: HeaderType, msg: bytes, 
            error_len=0, bs_len=0, int_info=0) -> bytes:
     return f"""
@@ -194,7 +197,10 @@ class IrodsProt(Enum):
     NATIVE_PROT = 0
     XML_PROT = 1
 
-## Now, let's start the connection process. First, we need an easy way to create the StartupPack.
+## Now, let's start the connection process. First, we need an easy way to create the StartupPack.low
+## define StartupPack_PI "int irodsProt; int reconnFlag; int connectCnt; str proxyUser[NAME_LEN];\ 
+##                        str proxyRcatZone[NAME_LEN]; str clientUser[NAME_LEN]; str clientRcatZone[NAME_LEN];\ 
+##                        str relVersion[NAME_LEN]; str apiVersion[NAME_LEN]; str option[LONG_NAME_LEN];"
 def startup_pack(irods_prot=IrodsProt.XML_PROT.value,
                  reconn_flag=0, 
                  connect_cnt=0,
@@ -290,6 +296,7 @@ def read_base64_into_json(bsix: bytes, trunc=False) -> dict:
     decoded = base64.b64decode(bsix).decode('utf-8')
     return json.loads(decoded[:-1]) if trunc else json.loads(decoded)
 
+## #define BytesBuf_PI "int buflen; char *buf(buflen);"
 def bin_bytes_buf(payload: dict) -> bytes:
     payload = encode_dict_as_base64_json(payload)
     return f"""
@@ -390,6 +397,8 @@ h, m = recv(conn)
 # In[21]:
 
 
+## #define DataObjInp_PI "str objPath[MAX_NAME_LEN]; int createMode; int openFlags; double offset; \
+##  double dataSize; int numThreads; int oprType; struct *SpecColl_PI; struct KeyValPair_PI;"
 def data_obj_inp(
     obj_path,
     create_mode="0",
@@ -499,6 +508,8 @@ h, m = recv(conn)
 # In[25]:
 
 
+## #define GenQueryInp_PI "int maxRows; int continueInx; int partialStartIndex; \
+## int options; struct KeyValPair_PI; struct InxIvalPair_PI; struct InxValPair_PI;"
 def gen_query(
     max_rows=256,
     continue_inx=0,
@@ -778,6 +789,8 @@ SEEK_SET = 0
 SEEK_CUR = 1
 SEEK_END = 2
 
+## #define OpenedDataObjInp_PI "int l1descInx; int len; int whence; int oprType; \
+## double offset; double bytesWritten; struct KeyValPair_PI;"
 def opened_data_obj_inp(l1_desc,
                        len_=0,
                        whence=SEEK_SET,
@@ -867,6 +880,9 @@ send_msg(closer, conn)
 
 
 dummy_spec_query = "SELECT data_name FROM r_data_main"
+
+## #define generalAdminInp_PI "str *arg0; str *arg1; str *arg2; \
+## str *arg3; str *arg4; str *arg5; str *arg6; str *arg7;  str *arg8;  str *arg9;"
 def general_admin_inp(
     arg_zero=" ",
     arg_one=" ",
@@ -939,6 +955,9 @@ veryAdvancedHelloWorldRule{
 input *greeting1 = $'Hello', *greeting2 = $'World'
 output ruleExecOut
 """
+
+## #define ExecMyRuleInp_PI "str myRule[META_STR_LEN]; struct RHostAddr_PI; \
+## struct KeyValPair_PI; str outParamDesc[LONG_NAME_LEN]; struct *MsParamArray_PI;"
 rule_exec_PI = b"""<ExecMyRuleInp_PI>
 <myRule>@external
 veryAdvancedHelloWorldRule{
