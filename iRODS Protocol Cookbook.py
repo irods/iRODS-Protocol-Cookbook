@@ -126,6 +126,23 @@ def header(header_type: HeaderType, msg: bytes,
                                                                ## but I removed them here for cleanliness
                                                                ## and efficiency for when this gets pushed
                                                                ## through the pipe.
+            
+def indent(elem, level=0):
+    i = "\n" + level*"  "
+    j = "\n" + (level-1)*"  "
+    if len(elem):
+        if not elem.text or not elem.text.strip():
+            elem.text = i + "  "
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = i
+        for subelem in elem:
+            indent(subelem, level+1)
+        if not elem.tail or not elem.tail.strip():
+            elem.tail = j
+    else:
+        if level and (not elem.tail or not elem.tail.strip()):
+            elem.tail = j
+    return elem
 
 
 # In[5]:
@@ -157,6 +174,7 @@ def recv(sock: socket) -> [ET, ET]:
     header_len = int.from_bytes(sock.recv(4), byteorder='big')
     print(f"HEADER LEN: [{header_len}]")
     header = ET.fromstring(sock.recv(header_len).decode("utf-8"))
+    ET.indent(header)
     ET.dump(header)
     if header_len > 0: ## TODO: It's odd that this is included as a case because something would be really
                        ## broken if this were true
@@ -166,6 +184,7 @@ def recv(sock: socket) -> [ET, ET]:
         if msg_len > 0:
             msg = ET.fromstring(sock.recv(
                 int(header.find("msgLen").text)).decode("utf-8"))
+            ET.indent(msg)
             ET.dump(msg)
             if error_len > 0:
                 print("[recv] getting error stack")
@@ -256,14 +275,14 @@ h = header(HeaderType.RODS_CONNECT.value, sp)
 h
 
 
-# In[10]:
+# In[ ]:
 
 
 send_header(h, conn)
 send_msg(sp, conn)
 
 
-# In[11]:
+# In[59]:
 
 
 ## In this Version_PI, status of 0 lets us know that negotiation has been successful.
@@ -278,7 +297,7 @@ h, msg = recv(conn)
 # This API works by exchanging binary buffers between client and server.
 # Since XML must be valid UTF-8, this binary data MUST be base64-encoded.
 
-# In[12]:
+# In[60]:
 
 
 def encode_dict_as_base64_json(d: dict): 
@@ -289,7 +308,7 @@ def encode_dict_as_base64_json(d: dict):
 # The payload is decoded because otherwise Python will 
 # add extra characters to give a string representation of the bytes object
 
-# In[13]:
+# In[61]:
 
 
 def read_base64_into_json(bsix: bytes, trunc=False) -> dict:
@@ -307,7 +326,7 @@ def bin_bytes_buf(payload: dict) -> bytes:
     """.replace(" ", "").replace("\n","").encode('utf8')
 
 
-# In[14]:
+# In[62]:
 
 
 ## Some API-specific parameters
@@ -321,7 +340,7 @@ auth_ctx = {
 }
 
 
-# In[15]:
+# In[63]:
 
 
 initial_auth_msg = bin_bytes_buf(auth_ctx)
@@ -333,7 +352,7 @@ send_header(h, conn)
 send_msg(initial_auth_msg, conn)
 
 
-# In[16]:
+# In[64]:
 
 
 h, m = recv(conn)
@@ -342,7 +361,7 @@ h, m = recv(conn)
 # If you were writing a real client library or application, you would want to check intInfo for error codes
 # so you could respond appropriately. Here, we're going to move on blissfully unaware.
 
-# In[17]:
+# In[65]:
 
 
 auth_ctx = read_base64_into_json(m.find("buf").text, trunc=True)
@@ -350,7 +369,7 @@ request_result = auth_ctx[ 'request_result']
 print(f"REQUEST RESULT: [{request_result}]")
 
 
-# In[18]:
+# In[66]:
 
 
 def pad_password(pw: str) -> bytes:
@@ -380,7 +399,7 @@ send_msg(challenge_response, conn)
 
 # Once again, an `intInfo` of 0 is the auth framework's way of telling us that we've successfully authenticated. Decode the buf frame base64 if you'd like to double check the state of the auth context.
 
-# In[20]:
+# In[ ]:
 
 
 h, m = recv(conn)
@@ -875,6 +894,8 @@ send_msg(closer, conn)
 
 # # Admin <a class="anchor" id="admin"></a>
 # Next, we're going to look at how to perform admin tasks. Recall from the section where we implemented "ils" that the iRODS server ships with prebuilt queries stored in the catalog. These are called "specific queries." The iCommand `asq` allows administrators to add new catalog queries. Let's implement `asq` straight from the protocol.
+# 
+# You might notice that the parameters for `generalAdminInp_PI` are not very self-describing. To get a better sense of what you can do with the admin API and how to map those to arguments, see [`server/api/src/rsGeneralAdmin.cpp`](https://github.com/irods/irods/blob/main/server/api/src/rsGeneralAdmin.cpp), and specifically the function `_rsGeneralAdmin`.
 
 # In[45]:
 
@@ -958,42 +979,41 @@ output ruleExecOut
 
 ## #define ExecMyRuleInp_PI "str myRule[META_STR_LEN]; struct RHostAddr_PI; \
 ## struct KeyValPair_PI; str outParamDesc[LONG_NAME_LEN]; struct *MsParamArray_PI;"
-rule_exec_PI = b"""<ExecMyRuleInp_PI>
-<myRule>@external
-veryAdvancedHelloWorldRule{
-    writeLine(&quot;stdout&quot;,&quot;$userNameClient says &apos;*greeting1 *greeting2&apos;&quot;)
-}
-</myRule>
-<RHostAddr_PI>
-<hostAddr></hostAddr>
-<rodsZone></rodsZone>
-<port>0</port>
-<dummyInt>0</dummyInt>
-</RHostAddr_PI>
-<KeyValPair_PI>
-<ssLen>0</ssLen>
-</KeyValPair_PI>
-<outParamDesc>ruleExecOut</outParamDesc>
-<MsParamArray_PI>
-<paramLen>2</paramLen>
-<oprType>0</oprType>
-<MsParam_PI>
-<label>*greeting1</label>
-<type>STR_PI</type>
-<STR_PI>
-<myStr> $&apos;Hello&apos;</myStr>
-</STR_PI>
-</MsParam_PI>
-<MsParam_PI>
-<label>*greeting2</label>
-<type>STR_PI</type>
-<STR_PI>
-<myStr> $&apos;World&apos;</myStr>
-</STR_PI>
-</MsParam_PI>
-</MsParamArray_PI>
+rule_exec_PI = f"""
+<ExecMyRuleInp_PI>
+    <myRule>@external
+        {rule_text}
+    </myRule>
+    <RHostAddr_PI>
+        <hostAddr></hostAddr>
+        <rodsZone></rodsZone>
+        <port>0</port>
+        <dummyInt>0</dummyInt>
+    </RHostAddr_PI>
+    <KeyValPair_PI>
+        <ssLen>0</ssLen>
+    </KeyValPair_PI>
+    <outParamDesc>ruleExecOut</outParamDesc>
+    <MsParamArray_PI>
+        <paramLen>2</paramLen>
+        <oprType>0</oprType>
+        <MsParam_PI>
+            <label>*greeting1</label>
+            <type>STR_PI</type>
+            <STR_PI>
+                <myStr> $&apos;Hello&apos;</myStr>
+            </STR_PI>
+        </MsParam_PI>
+        <MsParam_PI>
+            <label>*greeting2</label>
+            <type>STR_PI</type>
+            <STR_PI>
+                <myStr> $&apos;World&apos;</myStr>
+            </STR_PI>
+        </MsParam_PI>
+    </MsParamArray_PI>
 </ExecMyRuleInp_PI>
-"""
+""".encode("utf-8")
 # rule_exec_PI = translate_xml_to_irods_dialect(rule_exec_PI)
 
 
