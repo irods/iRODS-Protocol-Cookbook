@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[19]:
 
 
 ## We'll be doing this from scratch, so all imports will come from 
@@ -35,6 +35,7 @@ import pandas as pd
 # * [Streaming](#streaming)
 # * [Admin](#admin)
 # * [Rule Exec](#rule_exec)
+# * [Changing Your Password](#ipasswd)
 # * [Disconnect](#disconnect)
 
 # This tutorial assumes you have deployed iRODS in Docker using
@@ -46,13 +47,13 @@ import pandas as pd
 # ```
 # Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
 
-# In[2]:
+# In[20]:
 
 
 HOST = "172.19.0.3"
 
 
-# In[3]:
+# In[21]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -98,11 +99,11 @@ CATALOG_REVERSE_INDEX_TABLE = {
 # 
 # *Notice* that the comment above `def header(...` includes the packing instruction string for `MsgHeader_PI` ("PI" stands for "Packing Instruction"). This string has a special syntax that the iRODS server uses to define these message types.
 
-# In[4]:
+# In[22]:
 
 
 ## We can define these in an enum since 
-## header types are a closed class and are not sensitive to any
+## header types are a closed class and are not sensitive to any3
 ## particular API.
 class HeaderType(Enum):
     RODS_CONNECT = "RODS_CONNECT"
@@ -145,7 +146,7 @@ def indent(elem, level=0):
     return elem
 
 
-# In[5]:
+# In[23]:
 
 
 def send_header(header: bytes, sock: socket) -> None:
@@ -209,7 +210,7 @@ def recv(sock: socket) -> [ET, ET]:
 # ## Start of the "Real Work" <a class="anchor" id="start_of_real_work"></a>
 # Note that even if you are using a plugin for authentication, iRODS may still refer to the information in the StartupPack_PI during authentication. If you are experiencing bugs during that step, check your Startup Pack as well as the structures associated with your specific plugin.
 
-# In[6]:
+# In[24]:
 
 
 class IrodsProt(Enum):
@@ -252,7 +253,7 @@ def startup_pack(irods_prot=IrodsProt.XML_PROT.value,
 # If at some point the Notebook stops working, remember
 # to manually close the socket.
 
-# In[7]:
+# In[25]:
 
 
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -261,28 +262,28 @@ conn.connect((HOST, PORT))
 
 # ## Handshake <a class="anchor" id="handshake"></a>
 
-# In[8]:
+# In[26]:
 
 
 sp = startup_pack()
 sp
 
 
-# In[9]:
+# In[27]:
 
 
 h = header(HeaderType.RODS_CONNECT.value, sp)
 h
 
 
-# In[ ]:
+# In[28]:
 
 
 send_header(h, conn)
 send_msg(sp, conn)
 
 
-# In[59]:
+# In[29]:
 
 
 ## In this Version_PI, status of 0 lets us know that negotiation has been successful.
@@ -297,7 +298,7 @@ h, msg = recv(conn)
 # This API works by exchanging binary buffers between client and server.
 # Since XML must be valid UTF-8, this binary data MUST be base64-encoded.
 
-# In[60]:
+# In[30]:
 
 
 def encode_dict_as_base64_json(d: dict): 
@@ -308,7 +309,7 @@ def encode_dict_as_base64_json(d: dict):
 # The payload is decoded because otherwise Python will 
 # add extra characters to give a string representation of the bytes object
 
-# In[61]:
+# In[31]:
 
 
 def read_base64_into_json(bsix: bytes, trunc=False) -> dict:
@@ -326,7 +327,7 @@ def bin_bytes_buf(payload: dict) -> bytes:
     """.replace(" ", "").replace("\n","").encode('utf8')
 
 
-# In[62]:
+# In[32]:
 
 
 ## Some API-specific parameters
@@ -340,7 +341,7 @@ auth_ctx = {
 }
 
 
-# In[63]:
+# In[33]:
 
 
 initial_auth_msg = bin_bytes_buf(auth_ctx)
@@ -352,7 +353,7 @@ send_header(h, conn)
 send_msg(initial_auth_msg, conn)
 
 
-# In[64]:
+# In[34]:
 
 
 h, m = recv(conn)
@@ -361,23 +362,29 @@ h, m = recv(conn)
 # If you were writing a real client library or application, you would want to check intInfo for error codes
 # so you could respond appropriately. Here, we're going to move on blissfully unaware.
 
-# In[65]:
+# In[35]:
 
 
 auth_ctx = read_base64_into_json(m.find("buf").text, trunc=True)
-request_result = auth_ctx[ 'request_result']
+request_result = auth_ctx[ 'request_result'].encode('utf-8')
 print(f"REQUEST RESULT: [{request_result}]")
 
 
-# In[66]:
+# In[36]:
 
 
 def pad_password(pw: str) -> bytes:
     return struct.pack("%ds" % MAX_PASSWORD_LENGTH, pw.encode("utf-8").strip())
 
+## The "signature" is taken from the first 16 bytes of the challenge string
+## and is used by the server to validate certain operations,
+## like password changes.
+signature = "".join("{:02x}".format(c) for c in request_result)
+print(f"SIGNATURE: [{signature}]")
+
 ## Native auth specific operations
 m = hashlib.md5()
-m.update(request_result.encode("utf-8"))
+m.update(request_result)
 m.update(pad_password("rods"))
 digest = m.digest()
 encoded_digest = base64.b64encode(digest).decode('utf-8')
@@ -1034,6 +1041,9 @@ send_msg(rule_exec_PI, conn)
 
 h, m = recv(conn)
 
+
+# # Changing Your Password <a class="anchor" id="ipasswd"></a>
+# In addition to the general admin capabilities, iRODS exposes certain administrative abilities to rodsusers. First, we'll create a new user. This step just involves switching parameters in `generalAdminInp_PI`, so you might want to skip if you're not interested in that. However, switching 
 
 # # Disconnect <a class="anchor" id="disconnect"></a>
 # Finally, we'll disconnect from the iRODS server.

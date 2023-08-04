@@ -4,6 +4,9 @@ This repository demonstrates key operations in the iRODS protocol. It shows prot
 constructed as strings and sent over a TCP socket. This is intended to serve as a starting point
 for writing client libraries and applications.
 
+This repository also contains a .py file which executes the code in the notebook without a need for the 
+IPython runtime or Jupyter.
+
 ## Setup
 
 You will need to install Jupyter to run the notebook. You also need an 
