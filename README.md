@@ -16,6 +16,12 @@ let the iPython kernel know about it.
 - [Creating a virtulenv for Python](https://docs.python.org/3/library/venv.html)
 - [Configuring ipykernel for virtual environments](https://ipython.readthedocs.io/en/latest/install/kernel_install.html#kernel-install)
 
+Once you have activated and configured your virtual environment, run the following command:
+
+```bash
+python -m pip install pandas
+```
+
 ## iRODS
 
 This notebook can be run without any local iRODS installation. The only requirement is the hostname of a 
@@ -30,3 +36,13 @@ python stand_it_up.py \
 ```
 
 Further instructions can be found in the introduction of the Notebook itself.
+
+## Miscellaneous Notes
+
+### Protocol/API Boundary
+
+Due in part to the plugin-oriented structure of iRODS, it is sometimes difficult to distinguish conceptually between the core iRODS protocol from some specific API.
+For example, in this notebook, authentication is carried out by exchanging generic bytes buffers which are interpreted by the authentication framework introduced 
+in 4.3.0. However, in previous iRODS releases (e.g., 4.2.12), authentication involves authentication-specific message types. 
+
+### Some Common Error Cases
