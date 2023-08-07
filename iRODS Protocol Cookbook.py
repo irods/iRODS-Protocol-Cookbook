@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
+# In[76]:
 
 
 ## We'll be doing this from scratch, so all imports will come from 
@@ -48,13 +48,13 @@ import password_obfuscation as obf
 # ```
 # Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
 
-# In[3]:
+# In[77]:
 
 
 HOST = "172.19.0.3"
 
 
-# In[5]:
+# In[78]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -104,7 +104,7 @@ test_value = obf.encode(RANDOM_STRING_CLIENT_SIDE)
 # 
 # *Notice* that the comment above `def header(...` includes the packing instruction string for `MsgHeader_PI` ("PI" stands for "Packing Instruction"). This string has a special syntax that the iRODS server uses to define these message types.
 
-# In[22]:
+# In[79]:
 
 
 ## We can define these in an enum since 
@@ -151,7 +151,7 @@ def indent(elem, level=0):
     return elem
 
 
-# In[23]:
+# In[80]:
 
 
 def send_header(header: bytes, sock: socket) -> None:
@@ -215,7 +215,7 @@ def recv(sock: socket) -> [ET, ET]:
 # ## Start of the "Real Work" <a class="anchor" id="start_of_real_work"></a>
 # Note that even if you are using a plugin for authentication, iRODS may still refer to the information in the StartupPack_PI during authentication. If you are experiencing bugs during that step, check your Startup Pack as well as the structures associated with your specific plugin.
 
-# In[24]:
+# In[81]:
 
 
 class IrodsProt(Enum):
@@ -258,7 +258,7 @@ def startup_pack(irods_prot=IrodsProt.XML_PROT.value,
 # If at some point the Notebook stops working, remember
 # to manually close the socket.
 
-# In[25]:
+# In[82]:
 
 
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -267,28 +267,28 @@ conn.connect((HOST, PORT))
 
 # ## Handshake <a class="anchor" id="handshake"></a>
 
-# In[26]:
+# In[83]:
 
 
 sp = startup_pack()
 sp
 
 
-# In[27]:
+# In[84]:
 
 
 h = header(HeaderType.RODS_CONNECT.value, sp)
 h
 
 
-# In[28]:
+# In[85]:
 
 
 send_header(h, conn)
 send_msg(sp, conn)
 
 
-# In[29]:
+# In[86]:
 
 
 ## In this Version_PI, status of 0 lets us know that negotiation has been successful.
@@ -303,7 +303,7 @@ h, msg = recv(conn)
 # This API works by exchanging binary buffers between client and server.
 # Since XML must be valid UTF-8, this binary data MUST be base64-encoded.
 
-# In[30]:
+# In[87]:
 
 
 def encode_dict_as_base64_json(d: dict): 
@@ -314,7 +314,7 @@ def encode_dict_as_base64_json(d: dict):
 # The payload is decoded because otherwise Python will 
 # add extra characters to give a string representation of the bytes object
 
-# In[31]:
+# In[88]:
 
 
 def read_base64_into_json(bsix: bytes, trunc=False) -> dict:
@@ -332,7 +332,7 @@ def bin_bytes_buf(payload: dict) -> bytes:
     """.replace(" ", "").replace("\n","").encode('utf8')
 
 
-# In[32]:
+# In[89]:
 
 
 ## Some API-specific parameters
@@ -346,7 +346,7 @@ auth_ctx = {
 }
 
 
-# In[33]:
+# In[90]:
 
 
 initial_auth_msg = bin_bytes_buf(auth_ctx)
@@ -358,7 +358,7 @@ send_header(h, conn)
 send_msg(initial_auth_msg, conn)
 
 
-# In[34]:
+# In[91]:
 
 
 h, m = recv(conn)
@@ -367,7 +367,7 @@ h, m = recv(conn)
 # If you were writing a real client library or application, you would want to check intInfo for error codes
 # so you could respond appropriately. Here, we're going to move on blissfully unaware.
 
-# In[35]:
+# In[92]:
 
 
 auth_ctx = read_base64_into_json(m.find("buf").text, trunc=True)
@@ -375,7 +375,7 @@ request_result = auth_ctx[ 'request_result'].encode('utf-8')
 print(f"REQUEST RESULT: [{request_result}]")
 
 
-# In[36]:
+# In[93]:
 
 
 def pad_password(pw: str) -> bytes:
@@ -399,7 +399,7 @@ challenge_response = bin_bytes_buf(auth_ctx)
 print(challenge_response)
 
 
-# In[19]:
+# In[94]:
 
 
 h = header(HeaderType.RODS_API_REQ.value, 
@@ -411,7 +411,7 @@ send_msg(challenge_response, conn)
 
 # Once again, an `intInfo` of 0 is the auth framework's way of telling us that we've successfully authenticated. Decode the buf frame base64 if you'd like to double check the state of the auth context.
 
-# In[ ]:
+# In[95]:
 
 
 h, m = recv(conn)
@@ -425,7 +425,7 @@ h, m = recv(conn)
 
 # First, we'll have to generate a `DataObjInp_PI`. This is a generic message type used for all sorts of operations. It also contains a `KeyValPair_PI`, which is an important data structure in the iRODS protocol. Although it cannot be sent on its own, it is a very important vehicle for parameters. Internally, this `KeyValPair_PI` is a cond_input structure.
 
-# In[21]:
+# In[96]:
 
 
 ## #define DataObjInp_PI "str objPath[MAX_NAME_LEN]; int createMode; int openFlags; double offset; \
@@ -460,7 +460,7 @@ def data_obj_inp(
 
 # Next, we'll need some utility methods. How these work might not be totally obvious, so consider reading ahead and revisiting these once you've seen how it's used in the stat API Call.
 
-# In[22]:
+# In[97]:
 
 
 def append_kvp(et, data):
@@ -512,7 +512,7 @@ def append_ivp(et, data):
     return et
 
 
-# In[23]:
+# In[98]:
 
 
 stat_obj_inp = data_obj_inp("/tempZone/home/rods") 
@@ -526,7 +526,7 @@ send_msg(stat_obj_inp, conn)
 
 # If everything has gone smoothely, you should receive a `RodsObjStat_PI` from the server. That `objType` is 2 tells us that the thing we stat'd was a collection. Since collections are purely virtual objects, `objSize` is 0.
 
-# In[24]:
+# In[99]:
 
 
 h, m = recv(conn)
@@ -536,7 +536,7 @@ h, m = recv(conn)
 # 
 # Now we know our target is there. Let's go ahead and read its contents. This happens through a genQuery. For details about the first-generation GenQuery API, see [here](https://github.com/irods/irods_docs/blob/main/docs/developers/library_examples.md#querying-the-catalog-using-general-queries). For information about the GenQuery2 interface (under development as of time of writing), see [here](https://www.youtube.com/watch?v=3dR_JoGA6wA&t=654s&ab_channel=TheiRODSConsortium).
 
-# In[25]:
+# In[100]:
 
 
 ## #define GenQueryInp_PI "int maxRows; int continueInx; int partialStartIndex; \
@@ -594,7 +594,7 @@ def spec_query(
     return ET.tostring(ret)
 
 
-# In[26]:
+# In[101]:
 
 
 gq = gen_query(
@@ -617,7 +617,7 @@ gq = gen_query(
 
 # One quick thing before we send this over to the server: the iRODS dialect of XML has a few quirks related to encoding special characters. Some special characters it does not escape at all. For others, it uses a non-standard encoding. For example, iRODS XML does not distinguish between "\`" and "'" (backticks and single quotes). For these reasons, we'll need to write some functions that translate between standard XML and iRODS XML.
 
-# In[27]:
+# In[102]:
 
 
 STANDARD_TO_IRODS_TABLE = {
@@ -647,7 +647,7 @@ h = header(HeaderType.RODS_API_REQ.value,
            int_info=API_TABLE["GEN_QUERY_AN"])
 
 
-# In[28]:
+# In[103]:
 
 
 send_header(h, conn)
@@ -656,7 +656,7 @@ send_msg(gq, conn)
 
 # The results from this GenQuery might be a little hard to grok. 
 
-# In[29]:
+# In[104]:
 
 
 h, m = recv(conn)
@@ -664,7 +664,7 @@ h, m = recv(conn)
 
 # To demonstrate how they amount to valid SQL results, let's translate these into a Pandas DataFrame. To see a similar example in C++ that operates above the protocol level, refer to the genQuery1 documentation linked above.
 
-# In[30]:
+# In[105]:
 
 
 def read_gen_query_results_into_dataframe(gqr):    
@@ -695,7 +695,7 @@ read_gen_query_results_into_dataframe(m)
 # Now that we can see the contents of this collection, let's create a new data object inside of it. 
 # This will show cases some of the more advanced features of `condInpt`. 
 
-# In[31]:
+# In[106]:
 
 
 ## Suppose we want to transfer a file containing this text.
@@ -709,7 +709,7 @@ int main() {
 """
 
 
-# In[32]:
+# In[107]:
 
 
 data_object_name = "hello.cpp"
@@ -735,13 +735,13 @@ send_msg(iput_payload, conn, bs_buf=hello_cpp.encode("utf-8"))
 
 # Once you've received the response from the server and verified that `intInfo` is zero, go re-run the genQuery which produced the ls you ran before. You should see new file there.
 
-# In[33]:
+# In[108]:
 
 
 h, m = recv(conn)
 
 
-# In[34]:
+# In[109]:
 
 
 h = header(HeaderType.RODS_API_REQ.value, 
@@ -772,7 +772,7 @@ read_gen_query_results_into_dataframe(m)
 # 
 # Modern iRODS versions implement parallel transfer using multiple streams. This documentation won't implement parallel transfer, but will show how to use the streaming API that it is built on top of.
 
-# In[35]:
+# In[110]:
 
 
 ## We'll open this file, seek past #includes and read. 
@@ -793,19 +793,19 @@ send_header(h, conn)
 send_msg(streaming_open_request, conn)
 
 
-# In[36]:
+# In[111]:
 
 
 h, m = recv(conn)
 
 
-# In[37]:
+# In[112]:
 
 
 print(h.find("intInfo").text)
 
 
-# In[38]:
+# In[113]:
 
 
 ## This time intInfo, if it is positive, will be the value of the L1 Descriptor return by the server,
@@ -844,7 +844,7 @@ def opened_data_obj_inp(l1_desc,
     return ET.tostring(ret).decode("utf-8").replace(" ", "").replace("\n", "").encode("utf-8")
 
 
-# In[39]:
+# In[114]:
 
 
 seeker = opened_data_obj_inp(l1_descriptor, offset=seek_len)
@@ -858,13 +858,13 @@ send_header(h, conn)
 send_msg(seeker, conn)
 
 
-# In[40]:
+# In[115]:
 
 
 h, m = recv(conn)
 
 
-# In[41]:
+# In[116]:
 
 
 reader = opened_data_obj_inp(l1_descriptor, len_=8192) ## The len parameter is important -- 
@@ -880,13 +880,13 @@ send_header(h, conn)
 send_msg(reader, conn)
 
 
-# In[42]:
+# In[117]:
 
 
 h, m = recv(conn)
 
 
-# In[43]:
+# In[118]:
 
 
 closer = opened_data_obj_inp(l1_descriptor)
@@ -897,7 +897,7 @@ h = header(
 )
 
 
-# In[44]:
+# In[119]:
 
 
 send_header(h, conn)
@@ -909,7 +909,7 @@ send_msg(closer, conn)
 # 
 # You might notice that the parameters for `generalAdminInp_PI` are not very self-describing. To get a better sense of what you can do with the admin API and how to map those to arguments, see [`server/api/src/rsGeneralAdmin.cpp`](https://github.com/irods/irods/blob/main/server/api/src/rsGeneralAdmin.cpp), and specifically the function `_rsGeneralAdmin`.
 
-# In[45]:
+# In[120]:
 
 
 dummy_spec_query = "SELECT data_name FROM r_data_main"
@@ -944,7 +944,7 @@ def general_admin_inp(
     """.replace(" ", "").replace("\n", "").encode("utf-8")
 
 
-# In[46]:
+# In[121]:
 
 
 new_spec_query_req = general_admin_inp(
@@ -960,14 +960,14 @@ h = header(
 )
 
 
-# In[47]:
+# In[122]:
 
 
 send_header(h, conn)
 send_msg(new_spec_query_req, conn)
 
 
-# In[48]:
+# In[123]:
 
 
 h, m = recv(conn) ## Assuming int_info is 0, you should now be able to run your query on the command line like this:
@@ -978,7 +978,7 @@ h, m = recv(conn) ## Assuming int_info is 0, you should now be able to run your 
 # The last thing we'll look at is sending rule execution requests.
 # We won't procedurally create this string to reduce complexity, but the structure of these XML structures should be clear from the context. The text of this rule is taken from [documentation](https://vlaams-supercomputing-centrum-vscdocumentation.readthedocs-hosted.com/en/latest/data/workflow_automation.html) produced by the Vlaams Supercomputing Center.
 
-# In[49]:
+# In[124]:
 
 
 rule_text = """
@@ -1029,7 +1029,7 @@ rule_exec_PI = f"""
 # rule_exec_PI = translate_xml_to_irods_dialect(rule_exec_PI)
 
 
-# In[50]:
+# In[125]:
 
 
 h = header(
@@ -1041,7 +1041,7 @@ send_header(h, conn)
 send_msg(rule_exec_PI, conn)
 
 
-# In[51]:
+# In[126]:
 
 
 h, m = recv(conn)
@@ -1050,7 +1050,7 @@ h, m = recv(conn)
 # # Changing Your Password <a class="anchor" id="ipasswd"></a>
 # In addition to the general admin capabilities, iRODS exposes certain administrative abilities to rodsusers. First, we'll create a new user. This step just involves switching parameters in `generalAdminInp_PI`, so you might want to skip if you're not interested in that. However, switching 
 
-# In[ ]:
+# In[127]:
 
 
 def user_admin(
@@ -1081,20 +1081,43 @@ def user_admin(
     """.replace("\n", "").replace(" ", "").encode("utf-8")
 
 
-# In[ ]:
+# In[128]:
 
+
+obfuscated_password = obf.obfuscate_new_password("testpass",
+                                                "rods",
+                                                signature)
 
 pw_change_request = user_admin(
-    arg_one="rod",
+    arg_zero="userpw",
+    arg_one="rods",
     arg_two="password",
-    a
+    arg_three=obfuscated_password
 )
+
+
+# In[129]:
+
+
+h = header(
+    HeaderType.RODS_API_REQ.value,
+    pw_change_request,
+    int_info=API_TABLE["USER_ADMIN_AN"]
+)
+send_header(h, conn)
+send_msg(pw_change_request, conn)
+
+
+# In[130]:
+
+
+h, m = recv(conn)
 
 
 # # Disconnect <a class="anchor" id="disconnect"></a>
 # Finally, we'll disconnect from the iRODS server.
 
-# In[51]:
+# In[56]:
 
 
 def disconnect(sock):
@@ -1103,7 +1126,7 @@ def disconnect(sock):
     )
 
 
-# In[52]:
+# In[57]:
 
 
 disconnect(conn)
