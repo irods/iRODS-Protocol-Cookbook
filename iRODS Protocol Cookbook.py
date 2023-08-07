@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[19]:
+# In[2]:
 
 
 ## We'll be doing this from scratch, so all imports will come from 
@@ -17,6 +17,7 @@ import xml.etree.ElementTree as ET
 from enum import Enum
 
 import pandas as pd
+import password_obfuscation as obf
 
 
 # # IRODS Protocol Cookbook
@@ -47,13 +48,13 @@ import pandas as pd
 # ```
 # Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
 
-# In[20]:
+# In[3]:
 
 
 HOST = "172.19.0.3"
 
 
-# In[21]:
+# In[5]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -89,6 +90,10 @@ CATALOG_INDEX_TABLE = {
 CATALOG_REVERSE_INDEX_TABLE = {
     v:k for k,v in CATALOG_INDEX_TABLE.items()
 }
+
+## This is an arbitrary string hardcoded into the server; will be checked by the server
+RANDOM_STRING_CLIENT_SIDE = "1gCBizHWbwIYyWLoysGzTe6SyzqFKMniZX05faZHWAwQKXf6Fs"
+test_value = obf.encode(RANDOM_STRING_CLIENT_SIDE)
 
 
 # First, we're going to write a small library of functions that do some 
@@ -1044,6 +1049,47 @@ h, m = recv(conn)
 
 # # Changing Your Password <a class="anchor" id="ipasswd"></a>
 # In addition to the general admin capabilities, iRODS exposes certain administrative abilities to rodsusers. First, we'll create a new user. This step just involves switching parameters in `generalAdminInp_PI`, so you might want to skip if you're not interested in that. However, switching 
+
+# In[ ]:
+
+
+def user_admin(
+    arg_zero=" ",
+    arg_one=" ",
+    arg_two=" ",
+    arg_three=" ",
+    arg_four=" ",
+    arg_five=" ",
+    arg_six=" ",
+    arg_seven=" ",
+    arg_eight=" ",
+    arg_nine=" "
+):
+    return f"""
+    <userAdminInp_PI>
+        <arg0>{arg_zero}</arg0>
+        <arg1>{arg_one}</arg1>
+        <arg2>{arg_two}</arg2>
+        <arg3>{arg_three}</arg3>
+        <arg4>{arg_four}</arg4>
+        <arg5>{arg_five}</arg5>
+        <arg6>{arg_six}</arg6>
+        <arg7>{arg_seven}</arg7>
+        <arg8>{arg_eight}</arg8>
+        <arg9>{arg_nine}</arg9>
+    </userAdminInp_PI>
+    """.replace("\n", "").replace(" ", "").encode("utf-8")
+
+
+# In[ ]:
+
+
+pw_change_request = user_admin(
+    arg_one="rod",
+    arg_two="password",
+    a
+)
+
 
 # # Disconnect <a class="anchor" id="disconnect"></a>
 # Finally, we'll disconnect from the iRODS server.
