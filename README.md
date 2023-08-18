@@ -28,7 +28,7 @@ python -m pip install pandas
 ## iRODS
 
 This notebook can be run without any local iRODS installation. The only requirement is the hostname of a 
-valid iRODS Catalog Provider. This could be a deployed iRODS installation, or a containerized iRODS test zone.
+valid iRODS Catalog Provider and rodsadmin credentials. This could be a deployed iRODS installation, or a containerized iRODS test zone.
 The fastest way of standing up such an instance is by cloning the [iRODS Testing Environment repository](https://github.com/irods/irods_testing_environment)
 and running something like the following script while in that repo's root directory:
 
