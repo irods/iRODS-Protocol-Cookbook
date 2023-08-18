@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[2]:
 
 
 ## We'll be doing this from scratch, so all imports will come from 
@@ -38,6 +38,7 @@ import password_obfuscation as obf
 # * [Rule Exec](#rule_exec)
 # * [Changing Your Password](#ipasswd)
 # * [Disconnect](#disconnect)
+# * [Appendix: iRODS Protocol Gotchas](#gotchas)
 
 # This tutorial assumes you have deployed iRODS in Docker using
 # the script stand_it_up.py from the iRODS Testing Environment, 
@@ -46,15 +47,18 @@ import password_obfuscation as obf
 # ```bash
 # docker inspect -f '{{range.NetworkSettings.Networks}}{{.IPAddress}}{{end}}' ubuntu-2004-postgres-1012_irods-catalog-provider_1
 # ```
-# Otherwise, if want to try this out on a real-world zone, insert that zone's hostname here.
+# 
+# *However,* this notebook works just fine for any iRODS deployment. Simply change the values `HOST`, `RODS_USER`, `PASSWORD`. It is recommended to create a new rodsadmin account or use an account whose password you are comfortable changing, and to start in the home collection of that user.
 
-# In[2]:
+# In[3]:
 
 
 HOST = "172.27.0.3"
+RODS_USER = "rods"
+PASSWORD = "rods"
 
 
-# In[3]:
+# In[4]:
 
 
 PORT = 1247 ## This is the standard iRODS port
@@ -104,7 +108,7 @@ test_value = obf.encode(RANDOM_STRING_CLIENT_SIDE)
 # 
 # *Notice* that the comment above `def header(...` includes the packing instruction string for `MsgHeader_PI` ("PI" stands for "Packing Instruction"). This string has a special syntax that the iRODS server uses to define these message types.
 
-# In[4]:
+# In[5]:
 
 
 ## We can define these in an enum since 
@@ -151,7 +155,7 @@ def indent(elem, level=0):
     return elem
 
 
-# In[5]:
+# In[6]:
 
 
 def send_header(header: bytes, sock: socket) -> None:
@@ -215,7 +219,7 @@ def recv(sock: socket) -> [ET, ET]:
 # ## Start of the "Real Work" <a class="anchor" id="start_of_real_work"></a>
 # Note that even if you are using a plugin for authentication, iRODS may still refer to the information in the StartupPack_PI during authentication. If you are experiencing bugs during that step, check your Startup Pack as well as the structures associated with your specific plugin.
 
-# In[6]:
+# In[7]:
 
 
 class IrodsProt(Enum):
@@ -258,7 +262,7 @@ def startup_pack(irods_prot=IrodsProt.XML_PROT.value,
 # If at some point the Notebook stops working, remember
 # to manually close the socket.
 
-# In[7]:
+# In[8]:
 
 
 conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -267,28 +271,28 @@ conn.connect((HOST, PORT))
 
 # ## Handshake <a class="anchor" id="handshake"></a>
 
-# In[8]:
+# In[ ]:
 
 
-sp = startup_pack()
+sp = startup_pack(client_user=RODS_USER)
 sp
 
 
-# In[9]:
+# In[ ]:
 
 
 h = header(HeaderType.RODS_CONNECT.value, sp)
 h
 
 
-# In[10]:
+# In[ ]:
 
 
 send_header(h, conn)
 send_msg(sp, conn)
 
 
-# In[11]:
+# In[ ]:
 
 
 ## In this Version_PI, status of 0 lets us know that negotiation has been successful.
@@ -303,7 +307,7 @@ h, msg = recv(conn)
 # This API works by exchanging binary buffers between client and server.
 # Since XML must be valid UTF-8, this binary data MUST be base64-encoded.
 
-# In[12]:
+# In[ ]:
 
 
 def encode_dict_as_base64_json(d: dict): 
@@ -314,7 +318,7 @@ def encode_dict_as_base64_json(d: dict):
 # The payload is decoded because otherwise Python will 
 # add extra characters to give a string representation of the bytes object
 
-# In[13]:
+# In[ ]:
 
 
 def read_base64_into_json(bsix: bytes, trunc=False) -> dict:
@@ -332,7 +336,7 @@ def bin_bytes_buf(payload: dict) -> bytes:
     """.replace(" ", "").replace("\n","").encode('utf8')
 
 
-# In[14]:
+# In[ ]:
 
 
 ## Some API-specific parameters
@@ -346,7 +350,7 @@ auth_ctx = {
 }
 
 
-# In[15]:
+# In[ ]:
 
 
 initial_auth_msg = bin_bytes_buf(auth_ctx)
@@ -358,7 +362,7 @@ send_header(h, conn)
 send_msg(initial_auth_msg, conn)
 
 
-# In[16]:
+# In[ ]:
 
 
 h, m = recv(conn)
@@ -367,7 +371,7 @@ h, m = recv(conn)
 # If you were writing a real client library or application, you would want to check intInfo for error codes
 # so you could respond appropriately. Here, we're going to move on blissfully unaware.
 
-# In[17]:
+# In[ ]:
 
 
 auth_ctx = read_base64_into_json(m.find("buf").text, trunc=True)
@@ -375,7 +379,7 @@ request_result = auth_ctx[ 'request_result'].encode('utf-8')
 print(f"REQUEST RESULT: [{request_result}]")
 
 
-# In[18]:
+# In[ ]:
 
 
 def pad_password(pw: str) -> bytes:
@@ -390,7 +394,7 @@ print(f"SIGNATURE: [{signature}]")
 ## Native auth specific operations
 m = hashlib.md5()
 m.update(request_result)
-m.update(pad_password("rods"))
+m.update(pad_password(PASSWORD))
 digest = m.digest()
 encoded_digest = base64.b64encode(digest).decode('utf-8')
 auth_ctx['digest'] = encoded_digest
@@ -399,7 +403,7 @@ challenge_response = bin_bytes_buf(auth_ctx)
 print(challenge_response)
 
 
-# In[19]:
+# In[ ]:
 
 
 h = header(HeaderType.RODS_API_REQ.value, 
@@ -411,7 +415,7 @@ send_msg(challenge_response, conn)
 
 # Once again, an `intInfo` of 0 is the auth framework's way of telling us that we've successfully authenticated. Decode the buf frame base64 if you'd like to double check the state of the auth context.
 
-# In[20]:
+# In[ ]:
 
 
 h, m = recv(conn)
@@ -420,12 +424,14 @@ h, m = recv(conn)
 # # ils <a class="anchor" id="ils"></a>
 # Next, let's perform an `ils`. The iCommands implementation does a little bit of verification, so we'll see how to perform object stat-ing, genQuery, and specQuery here.
 
+# Before delving into the substance of an iRODS workflow, you might take a look at the following image, which illustrates the general flow of the protocol. Essentially, after the handshake, the client and server loop between API requests and appropriate responses in an indefinite loop until the client sends a disconnect.![irods_control_flow.png](attachment:irods_control_flow.png)
+
 # ## Stat a Collection <a class="anchor" id="stat_coll"></a>
 # This step is necessary to make sure that the directory about to be ls'd actually exists.
 
 # First, we'll have to generate a `DataObjInp_PI`. This is a generic message type used for all sorts of operations. It also contains a `KeyValPair_PI`, which is an important data structure in the iRODS protocol. Although it cannot be sent on its own, it is a very important vehicle for parameters. Internally, this `KeyValPair_PI` is a cond_input structure.
 
-# In[21]:
+# In[ ]:
 
 
 ## #define DataObjInp_PI "str objPath[MAX_NAME_LEN]; int createMode; int openFlags; double offset; \
@@ -460,7 +466,7 @@ def data_obj_inp(
 
 # Next, we'll need some utility methods. How these work might not be totally obvious, so consider reading ahead and revisiting these once you've seen how it's used in the stat API Call.
 
-# In[22]:
+# In[ ]:
 
 
 def append_kvp(et, data):
@@ -512,7 +518,7 @@ def append_ivp(et, data):
     return et
 
 
-# In[23]:
+# In[ ]:
 
 
 stat_obj_inp = data_obj_inp("/tempZone/home/rods") 
@@ -526,7 +532,7 @@ send_msg(stat_obj_inp, conn)
 
 # If everything has gone smoothely, you should receive a `RodsObjStat_PI` from the server. That `objType` is 2 tells us that the thing we stat'd was a collection. Since collections are purely virtual objects, `objSize` is 0.
 
-# In[24]:
+# In[ ]:
 
 
 h, m = recv(conn)
@@ -536,7 +542,7 @@ h, m = recv(conn)
 # 
 # Now we know our target is there. Let's go ahead and read its contents. This happens through a genQuery. For details about the first-generation GenQuery API, see [here](https://github.com/irods/irods_docs/blob/main/docs/developers/library_examples.md#querying-the-catalog-using-general-queries). For information about the GenQuery2 interface (under development as of time of writing), see [here](https://www.youtube.com/watch?v=3dR_JoGA6wA&t=654s&ab_channel=TheiRODSConsortium).
 
-# In[25]:
+# In[ ]:
 
 
 ## #define GenQueryInp_PI "int maxRows; int continueInx; int partialStartIndex; \
@@ -594,7 +600,7 @@ def spec_query(
     return ET.tostring(ret)
 
 
-# In[26]:
+# In[ ]:
 
 
 gq = gen_query(
@@ -608,7 +614,7 @@ gq = gen_query(
         CATALOG_INDEX_TABLE["COL_D_CREATE_TIME"]:"1"
     },
     sql_cond_inp={
-        CATALOG_INDEX_TABLE["COL_COLL_NAME"]:"= '/tempZone/home/rods'"
+        CATALOG_INDEX_TABLE["COL_COLL_NAME"]    :f"= '/tempZone/home/{RODS_USER}'"
     }
 )
 
@@ -617,7 +623,7 @@ gq = gen_query(
 
 # One quick thing before we send this over to the server: the iRODS dialect of XML has a few quirks related to encoding special characters. Some special characters it does not escape at all. For others, it uses a non-standard encoding. For example, iRODS XML does not distinguish between "\`" and "'" (backticks and single quotes). For these reasons, we'll need to write some functions that translate between standard XML and iRODS XML.
 
-# In[27]:
+# In[ ]:
 
 
 STANDARD_TO_IRODS_TABLE = {
@@ -651,7 +657,7 @@ h = header(HeaderType.RODS_API_REQ.value,
            int_info=API_TABLE["GEN_QUERY_AN"])
 
 
-# In[28]:
+# In[ ]:
 
 
 send_header(h, conn)
@@ -660,7 +666,7 @@ send_msg(gq, conn)
 
 # The results from this GenQuery might be a little hard to grok. 
 
-# In[29]:
+# In[ ]:
 
 
 h, m = recv(conn)
@@ -668,7 +674,7 @@ h, m = recv(conn)
 
 # To demonstrate how they amount to valid SQL results, let's translate these into a Pandas DataFrame. To see a similar example in C++ that operates above the protocol level, refer to the genQuery1 documentation linked above.
 
-# In[30]:
+# In[ ]:
 
 
 def read_gen_query_results_into_dataframe(gqr):    
@@ -699,7 +705,7 @@ read_gen_query_results_into_dataframe(m)
 # Now that we can see the contents of this collection, let's create a new data object inside of it. 
 # This will show cases some of the more advanced features of `condInpt`. 
 
-# In[31]:
+# In[ ]:
 
 
 ## Suppose we want to transfer a file containing this text.
@@ -713,13 +719,13 @@ int main() {
 """
 
 
-# In[32]:
+# In[ ]:
 
 
 data_object_name = "hello.cpp"
 data_size=str(len(hello_cpp.encode("utf-8")))
 iput_payload = data_obj_inp(
-    f"/tempZone/home/rods/{data_object_name}",
+    f"/tempZone/home//{data_object_name}",
     open_flags="2",
     data_size=data_size,
     opr_type="1",
@@ -739,13 +745,13 @@ send_msg(iput_payload, conn, bs_buf=hello_cpp.encode("utf-8"))
 
 # Once you've received the response from the server and verified that `intInfo` is zero, go re-run the genQuery which produced the ls you ran before. You should see new file there.
 
-# In[33]:
+# In[ ]:
 
 
 h, m = recv(conn)
 
 
-# In[34]:
+# In[ ]:
 
 
 h = header(HeaderType.RODS_API_REQ.value, 
@@ -776,7 +782,7 @@ read_gen_query_results_into_dataframe(m)
 # 
 # Modern iRODS versions implement parallel transfer using multiple streams. This documentation won't implement parallel transfer, but will show how to use the streaming API that it is built on top of.
 
-# In[35]:
+# In[ ]:
 
 
 ## We'll open this file, seek past #includes and read. 
@@ -797,19 +803,19 @@ send_header(h, conn)
 send_msg(streaming_open_request, conn)
 
 
-# In[36]:
+# In[ ]:
 
 
 h, m = recv(conn)
 
 
-# In[37]:
+# In[ ]:
 
 
 print(h.find("intInfo").text)
 
 
-# In[38]:
+# In[ ]:
 
 
 ## This time intInfo, if it is positive, will be the value of the L1 Descriptor return by the server,
@@ -848,7 +854,7 @@ def opened_data_obj_inp(l1_desc,
     return ET.tostring(ret).decode("utf-8").replace(" ", "").replace("\n", "").encode("utf-8")
 
 
-# In[39]:
+# In[ ]:
 
 
 seeker = opened_data_obj_inp(l1_descriptor, offset=seek_len)
@@ -862,13 +868,13 @@ send_header(h, conn)
 send_msg(seeker, conn)
 
 
-# In[40]:
+# In[ ]:
 
 
 h, m = recv(conn)
 
 
-# In[41]:
+# In[ ]:
 
 
 reader = opened_data_obj_inp(l1_descriptor, len_=8192) ## The len parameter is important -- 
@@ -884,13 +890,13 @@ send_header(h, conn)
 send_msg(reader, conn)
 
 
-# In[42]:
+# In[ ]:
 
 
 h, m = recv(conn)
 
 
-# In[43]:
+# In[ ]:
 
 
 closer = opened_data_obj_inp(l1_descriptor)
@@ -901,14 +907,14 @@ h = header(
 )
 
 
-# In[44]:
+# In[ ]:
 
 
 send_header(h, conn)
 send_msg(closer, conn)
 
 
-# In[45]:
+# In[ ]:
 
 
 h, m = recv(conn)
@@ -919,7 +925,7 @@ h, m = recv(conn)
 # 
 # You might notice that the parameters for `generalAdminInp_PI` are not very self-describing. To get a better sense of what you can do with the admin API and how to map those to arguments, see [`server/api/src/rsGeneralAdmin.cpp`](https://github.com/irods/irods/blob/main/server/api/src/rsGeneralAdmin.cpp), and specifically the function `_rsGeneralAdmin`.
 
-# In[46]:
+# In[ ]:
 
 
 dummy_spec_query = "SELECT data_name FROM r_data_main"
@@ -954,7 +960,7 @@ def general_admin_inp(
     """.replace("\n", "").encode("utf-8")
 
 
-# In[47]:
+# In[ ]:
 
 
 new_spec_query_req = general_admin_inp(
@@ -988,7 +994,7 @@ h, m = recv(conn) ## Assuming int_info is 0, you should now be able to run your 
 # The last thing we'll look at is sending rule execution requests.
 # We won't procedurally create this string to reduce complexity, but the structure of these XML structures should be clear from the context. The text of this rule is taken from [documentation](https://vlaams-supercomputing-centrum-vscdocumentation.readthedocs-hosted.com/en/latest/data/workflow_automation.html) produced by the Vlaams Supercomputing Center.
 
-# In[56]:
+# In[59]:
 
 
 rule_text = """
@@ -999,11 +1005,11 @@ veryAdvancedHelloWorldRule{
 
 ## #define ExecMyRuleInp_PI "str myRule[META_STR_LEN]; struct RHostAddr_PI; \
 ## struct KeyValPair_PI; str outParamDesc[LONG_NAME_LEN]; struct *MsParamArray_PI;"
-rule_exec_PI = f"""
+rule_exec_PI = ET.fromstring(f"""
 <ExecMyRuleInp_PI>
 <myRule>@external
 veryAdvancedHelloWorldRule{{
-    writeLine(&quot;stdout&quot;,&quot;$userNameClient says &apos;*greeting1 *greeting2&apos;&quot;)
+    writeLine('stdout',"$userNameClient says '*greeting1 *greeting2'")
 }}
 </myRule>
 <RHostAddr_PI>
@@ -1025,7 +1031,7 @@ veryAdvancedHelloWorldRule{{
 <label>*greeting1</label>
 <type>STR_PI</type>
 <STR_PI>
-<myStr> 'Hello'&</myStr>
+<myStr> 'Hello'</myStr>
 </STR_PI>
 </MsParam_PI>
 <MsParam_PI>
@@ -1037,13 +1043,13 @@ veryAdvancedHelloWorldRule{{
 </MsParam_PI>
 </MsParamArray_PI>
 </ExecMyRuleInp_PI>
-""".encode("utf-8")
+""".encode("utf-8"))
 rule_exec_PI = ET.tostring(rule_exec_PI)
 rule_exec_PI = translate_xml_to_irods_dialect(rule_exec_PI)
 print(rule_exec_PI)
 
 
-# In[57]:
+# In[60]:
 
 
 h = header(
@@ -1055,7 +1061,9 @@ send_header(h, conn)
 send_msg(rule_exec_PI, conn)
 
 
-# In[55]:
+# This rule prints "Hello World!" to stdout. Notice that when you receive that message from the server, the buffer is 5464 bytes long and contains a long string of null/garbage characters after the desired string. This is a known feature of the native rule engine; when printing to stdout, it always allocates a buffer of this size and assumes that the client will look for a null-terminator to determine to where the actual content is.
+
+# In[61]:
 
 
 h, m = recv(conn)
@@ -1146,3 +1154,10 @@ def disconnect(sock):
 disconnect(conn)
 conn.close()
 
+
+# # Appendix: iRODS Protocol Gotchas <a class="anchor" id="gotchas"></a>
+
+# - Forgetting to close a tag can often trip up the server's parsing logic in such a way that it sends a header with `intInfo` 0, or some other indication that the request was successful. However, the next message will have an error code `-15000` indicating a formatting error. A similar behavior is sometimes
+# seen if a call to `recv` (or whatever function you write that pulls bytes out of the TCP socket) is left out after an API request.
+# - Although the protocol is supposed to be white-space agnostic, sometimes beginning a message with a newline character (`\n`) can cause unexpected behavior. Caution is best in this situation.
+# - The protocol is order-dependent; that is, the order in which XML elements appear in the messages must be exactly identical to the order in which they appear in the corresponding packing instruction string as defined in `rodsPackInstruct.h`
