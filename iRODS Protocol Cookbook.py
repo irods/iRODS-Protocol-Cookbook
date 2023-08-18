@@ -725,7 +725,7 @@ int main() {
 data_object_name = "hello.cpp"
 data_size=str(len(hello_cpp.encode("utf-8")))
 iput_payload = data_obj_inp(
-    f"/tempZone/home//{data_object_name}",
+    f"/tempZone/home/{RODS_USER}/{data_object_name}",
     open_flags="2",
     data_size=data_size,
     opr_type="1",
@@ -1107,12 +1107,12 @@ def user_admin(
 
 
 obfuscated_password = obf.obfuscate_new_password("testpass",
-                                                "rods",
+                                                PASSWORD,
                                                 signature)
 
 pw_change_request = user_admin(
     arg_zero="userpw",
-    arg_one="rods",
+    arg_one=RODS_USER,
     arg_two="password",
     arg_three=obfuscated_password
 )
