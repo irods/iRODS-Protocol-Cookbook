@@ -47,5 +47,3 @@ Further instructions can be found in the introduction of the Notebook itself.
 Due in part to the plugin-oriented structure of iRODS, it is sometimes difficult to distinguish conceptually between the core iRODS protocol from some specific API.
 For example, in this notebook, authentication is carried out by exchanging generic bytes buffers which are interpreted by the authentication framework introduced 
 in 4.3.0. However, in previous iRODS releases (e.g., 4.2.12), authentication involves authentication-specific message types. 
-
-### Some Common Error Cases
